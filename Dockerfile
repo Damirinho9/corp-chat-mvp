@@ -5,7 +5,6 @@ ENV CI=true
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
 RUN npm ci
-RUN npm run prisma:pg:generate
 
 # 2️⃣ Stage: build
 FROM node:20-alpine AS build
@@ -34,6 +33,3 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD wget -qO- http://
 COPY start.sh ./start.sh
 RUN chmod +x ./start.sh
 CMD ["./start.sh"]
-
-# запускаем миграции и сервер
-CMD sh -c "npx prisma migrate deploy --schema=prisma/schema.postgres.prisma && node dist/main.js"
