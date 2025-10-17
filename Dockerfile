@@ -31,5 +31,9 @@ EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD wget -qO- http://127.0.0.1:3000/ || exit 1
 
+COPY start.sh ./start.sh
+RUN chmod +x ./start.sh
+CMD ["./start.sh"]
+
 # запускаем миграции и сервер
 CMD sh -c "npx prisma migrate deploy --schema=prisma/schema.postgres.prisma && node dist/main.js"
