@@ -9,12 +9,50 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.PrismaService = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
-let PrismaService = class PrismaService extends client_1.PrismaClient {
+const logging_1 = require("./logging");
+let PrismaService = class PrismaService {
+    constructor() {
+        this.prisma = new client_1.PrismaClient();
+    }
     async onModuleInit() {
-        await this.$connect();
+        await this.prisma.$connect();
+        // ✅ корректно работает в Prisma 6.17.1
+        this.prisma.$use(async (params, next) => {
+            const result = await next(params);
+            try {
+                if (params.model === "AuditLog" && params.action === "create") {
+                    const data = params.args?.data || {};
+                    logging_1.auditLogger.info({
+                        time: new Date().toISOString(),
+                        actorId: data.actorId ?? null,
+                        action: data.action ?? null,
+                        targetId: data.targetId ?? null,
+                        resource: data.resource ?? null,
+                        outcome: data.outcome ?? null,
+                        reason: data.reason ?? null,
+                    });
+                }
+            }
+            catch {
+                // не ломаем бизнес-логику при сбое логирования
+            }
+            return result;
+        });
     }
     async onModuleDestroy() {
-        await this.$disconnect();
+        await this.prisma.$disconnect();
+    }
+    // Проксирование моделей
+    get user() { return this.prisma.user; }
+    get department() { return this.prisma.department; }
+    get chat() { return this.prisma.chat; }
+    get chatMember() { return this.prisma.chatMember; }
+    get message() { return this.prisma.message; }
+    get attachment() { return this.prisma.attachment; }
+    get auditLog() { return this.prisma.auditLog; }
+    // Универсальный $transaction
+    $transaction(input) {
+        return this.prisma.$transaction(input);
     }
 };
 exports.PrismaService = PrismaService;

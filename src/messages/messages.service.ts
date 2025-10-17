@@ -101,6 +101,8 @@ export class MessagesService {
 
     const chat = await this.prisma.chat.create({
       data: {
+        name: `DM ${userA}-${userB}`, // или "Direct Chat"
+        type: "direct",
         isDirect: true,
         members: {
           create: [{ userId: userA }, { userId: userB }],
@@ -108,6 +110,7 @@ export class MessagesService {
       },
       select: { id: true },
     });
+
 
     return chat.id;
   }

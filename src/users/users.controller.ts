@@ -10,7 +10,7 @@ export class UsersController {
 
   @Get("me")
   async me(@Req() req: any) {
-    return this.prisma.user.findUnique({ where: { id: req.userId }, select: { id: true, username: true, displayName: true, role: true, departmentId: true, managerId: true } });
+    return this.prisma.user.findUnique({ where: { id: req.userId }, select: { id: true, username: true, displayName: true, role: true, departmentId: true } });
     }
 
   // поиск только по разрешенным адресатам для ЛС

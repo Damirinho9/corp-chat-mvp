@@ -13,7 +13,7 @@ export class AuthController {
     const { access, refresh } = this.auth.issueTokens({ id: user.id, role: user.role });
     res.cookie("access", access, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 15 * 60 * 1000 });
     res.cookie("refresh", refresh, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 7 * 24 * 60 * 60 * 1000 });
-    return { id: user.id, username: user.username, displayName: user.displayName, role: user.role, departmentId: user.departmentId, managerId: user.managerId };
+    return { id: user.id, username: user.username, displayName: user.displayName, role: user.role, departmentId: user.departmentId };
   }
 
   @Post("refresh")

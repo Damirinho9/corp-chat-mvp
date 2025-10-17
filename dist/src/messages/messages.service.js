@@ -12,83 +12,95 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MessagesService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../common/prisma.service");
-const rbac_service_1 = require("../common/rbac/rbac.service");
-const sse_gateway_1 = require("../common/sse.gateway");
 let MessagesService = class MessagesService {
-    constructor(prisma, rbac) {
+    constructor(prisma) {
         this.prisma = prisma;
-        this.rbac = rbac;
     }
-    async ensureDm(senderId, recipientId) {
-        const [sender, recipient] = await Promise.all([
-            this.prisma.user.findUnique({ where: { id: senderId } }),
-            this.prisma.user.findUnique({ where: { id: recipientId } }),
-        ]);
-        if (!sender || !recipient)
-            throw new common_1.ForbiddenException("unknown_user");
-        const decision = this.rbac.checkDmPermission(sender, recipient);
-        await this.prisma.auditLog.create({ data: { actorId: senderId, action: "SEND_DM_ATTEMPT", targetId: recipientId, resource: "DM", outcome: decision.allow ? "ALLOW" : "DENY", reason: decision.reason || null } });
-        if (!decision.allow)
-            throw new common_1.ForbiddenException(decision.reason || "dm_forbidden");
-        // найти существующий DM между этими пользователями
-        const chat = await this.prisma.chat.findFirst({
-            where: { type: 'DM', AND: [{ members: { some: { userId: senderId } } }, { members: { some: { userId: recipientId } } }] },
-            include: { members: true },
+    async sendToChat(senderId, chatId, content, attachmentIds) {
+        const me = await this.prisma.user.findUnique({ where: { id: senderId } });
+        const member = await this.prisma.chatMember.findFirst({
+            where: { chatId, userId: senderId },
         });
-        if (chat)
-            return chat;
-        // создать DM
-        return this.prisma.chat.create({
-            data: {
-                type: 'DM',
-                name: `dm_${senderId}_${recipientId}`,
-                members: { create: [{ userId: senderId }, { userId: recipientId }] },
+        if (me?.role !== "ADMIN" && !member) {
+            throw new common_1.ForbiddenException("not_a_member");
+        }
+        if (!content && (!attachmentIds || attachmentIds.length === 0)) {
+            throw new common_1.ForbiddenException("empty_message");
+        }
+        const msg = await this.prisma.message.create({
+            data: { chatId, senderId, content: content || "" },
+        });
+        if (attachmentIds?.length) {
+            await this.prisma.attachment.updateMany({
+                where: {
+                    id: { in: attachmentIds },
+                    uploadedById: senderId,
+                    messageId: null,
+                },
+                data: { messageId: msg.id },
+            });
+        }
+        return this.prisma.message.findUnique({
+            where: { id: msg.id },
+            include: {
+                sender: {
+                    select: { id: true, username: true, displayName: true },
+                },
+                attachments: true,
             },
-            include: { members: true },
         });
     }
-    async sendDm(senderId, recipientId, content) {
-        if (!content || content.length === 0)
-            throw new common_1.ForbiddenException("empty_content");
-        if (content.length > 2000)
-            throw new common_1.ForbiddenException("content_too_long");
-        const chat = await this.ensureDm(senderId, recipientId);
-        const msg = await this.prisma.message.create({ data: { chatId: chat.id, senderId, content } });
-        // уведомить участников
-        const members = await this.prisma.chatMember.findMany({ where: { chatId: chat.id } });
-        for (const m of members)
-            (0, sse_gateway_1.pushTo)(m.userId, { type: "message", chatId: chat.id, senderId, messageId: msg.id, content });
-        return msg;
+    async sendDm(senderId, recipientId, content, attachmentIds) {
+        const dmChat = await this.getOrCreateDmChatId(senderId, recipientId);
+        return this.sendToChat(senderId, dmChat, content, attachmentIds);
     }
-    async sendToChat(userId, chatId, content) {
-        if (!content || content.length === 0)
-            throw new common_1.ForbiddenException("empty_content");
-        if (content.length > 2000)
-            throw new common_1.ForbiddenException("content_too_long");
-        const chat = await this.prisma.chat.findUnique({ where: { id: chatId } });
-        const user = await this.prisma.user.findUnique({ where: { id: userId } });
-        if (!chat || !user)
-            throw new common_1.ForbiddenException("not_found");
-        const isMember = await this.prisma.chatMember.findFirst({ where: { chatId, userId } });
-        if (!isMember)
-            throw new common_1.ForbiddenException("not_a_member");
-        if (!this.rbac.checkGroupPermission(user, chat))
-            throw new common_1.ForbiddenException("group_forbidden");
-        const msg = await this.prisma.message.create({ data: { chatId, senderId: userId, content } });
-        const members = await this.prisma.chatMember.findMany({ where: { chatId } });
-        for (const m of members)
-            (0, sse_gateway_1.pushTo)(m.userId, { type: "message", chatId, senderId: userId, messageId: msg.id, content });
-        return msg;
+    async list(chatId, requesterId, opts) {
+        // TODO: сюда можно вставить проверку доступа, если ещё не реализовано
+        return this.prisma.message.findMany({
+            where: {
+                chatId,
+                ...(opts?.before && { createdAt: { lt: new Date(opts.before) } }),
+                ...(opts?.after && { createdAt: { gt: new Date(opts.after) } }),
+            },
+            orderBy: { createdAt: "desc" },
+            take: opts?.limit || 20,
+            include: {
+                sender: {
+                    select: { id: true, username: true, displayName: true },
+                },
+                attachments: true,
+            },
+        });
     }
-    async list(chatId, userId) {
-        const isMember = await this.prisma.chatMember.findFirst({ where: { chatId, userId } });
-        if (!isMember)
-            throw new common_1.ForbiddenException("not_a_member");
-        return this.prisma.message.findMany({ where: { chatId }, orderBy: { createdAt: "asc" } });
+    async getOrCreateDmChatId(a, b) {
+        const [userA, userB] = a < b ? [a, b] : [b, a];
+        const existing = await this.prisma.chat.findFirst({
+            where: {
+                isDirect: true,
+                members: {
+                    every: { userId: { in: [userA, userB] } },
+                },
+            },
+            select: { id: true },
+        });
+        if (existing)
+            return existing.id;
+        const chat = await this.prisma.chat.create({
+            data: {
+                name: `DM ${userA}-${userB}`, // или "Direct Chat"
+                type: "direct",
+                isDirect: true,
+                members: {
+                    create: [{ userId: userA }, { userId: userB }],
+                },
+            },
+            select: { id: true },
+        });
+        return chat.id;
     }
 };
 exports.MessagesService = MessagesService;
 exports.MessagesService = MessagesService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService, rbac_service_1.RbacService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
 ], MessagesService);

@@ -53,6 +53,7 @@ model Chat {
   name         String
   type         String
   systemKey    String?      @unique
+  isDirect     Boolean      @default(false)   // ✅ добавь эту строку
   departmentId Int?
   department   Department?  @relation(fields: [departmentId], references: [id])
   members      ChatMember[]

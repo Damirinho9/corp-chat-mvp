@@ -27,7 +27,15 @@ let DepartmentsController = class DepartmentsController {
         const me = await this.prisma.user.findUnique({ where: { id: req.userId } });
         if (me?.role !== "ADMIN")
             throw new common_1.ForbiddenException("admin_only");
-        return this.prisma.department.create({ data: { name: body.name } });
+        const dept = await this.prisma.department.create({ data: { name: body.name } });
+        // обязательно создаем системный чат отдела
+        const key = `dept_${dept.id}`;
+        await this.prisma.chat.upsert({
+            where: { systemKey: key },
+            update: {},
+            create: { type: "GROUP", name: `Отдел ${dept.name}`, departmentId: dept.id, systemKey: key },
+        });
+        return dept;
     }
 };
 exports.DepartmentsController = DepartmentsController;

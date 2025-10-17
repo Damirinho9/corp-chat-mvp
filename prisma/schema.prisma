@@ -24,19 +24,21 @@ model User {
 
   memberships     Membership[]
   chatMemberships ChatMember[] // исправлено
-  messages        Message[]    @relation("UserMessages")
+  messages        Message[]       @relation("UserMessages")
   uploads         Attachment[]
-  auditLogs       AuditLog[]   @relation("ActorLogs")
-
-  managedBy DirectManager?  @relation("DM_employee")
-  manages   DirectManager[] @relation("DM_manager")
+  auditLogs       AuditLog[]      @relation("ActorLogs")
+  managerId       Int?
+  managedBy       DirectManager?  @relation("DM_employee")
+  manages         DirectManager[] @relation("DM_manager")
+  Role            Role?           @relation(fields: [roleId], references: [id])
+  roleId          Int?
 
   @@index([status])
 }
 
 model Department {
   id          Int          @id @default(autoincrement())
-  name        String
+  name        String       @unique
   memberships Membership[]
   chats       Chat[]
   User        User[]
@@ -51,6 +53,7 @@ model Chat {
   department   Department?  @relation(fields: [departmentId], references: [id])
   members      ChatMember[]
   messages     Message[]
+  isDirect     Boolean? // или Boolean, если обязательное
 }
 
 model ChatMember {
@@ -120,4 +123,10 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   actor User @relation("ActorLogs", fields: [actorId], references: [id])
+}
+
+model Role {
+  id    Int    @id @default(autoincrement())
+  name  String @unique
+  users User[]
 }

@@ -23,7 +23,7 @@ let UsersController = class UsersController {
         this.rbac = rbac;
     }
     async me(req) {
-        return this.prisma.user.findUnique({ where: { id: req.userId }, select: { id: true, username: true, displayName: true, role: true, departmentId: true, managerId: true } });
+        return this.prisma.user.findUnique({ where: { id: req.userId }, select: { id: true, username: true, displayName: true, role: true, departmentId: true } });
     }
     // поиск только по разрешенным адресатам для ЛС
     async search(req, q) {

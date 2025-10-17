@@ -18,12 +18,23 @@ const prisma_service_1 = require("./common/prisma.service");
 const rbac_service_1 = require("./common/rbac/rbac.service");
 const ui_controller_1 = require("./ui/ui.controller");
 const sse_gateway_1 = require("./common/sse.gateway");
+const uploads_module_1 = require("./uploads/uploads.module");
+const presence_module_1 = require("./presence/presence.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
 exports.AppModule = AppModule = __decorate([
     (0, common_1.Module)({
-        imports: [auth_module_1.AuthModule, users_module_1.UsersModule, departments_module_1.DepartmentsModule, chats_module_1.ChatsModule, messages_module_1.MessagesModule, admin_module_1.AdminModule],
+        imports: [
+            auth_module_1.AuthModule,
+            users_module_1.UsersModule,
+            departments_module_1.DepartmentsModule,
+            chats_module_1.ChatsModule,
+            messages_module_1.MessagesModule,
+            admin_module_1.AdminModule,
+            uploads_module_1.UploadsModule,
+            presence_module_1.PresenceModule, // ✅ Добавили модуль присутствия
+        ],
         controllers: [ui_controller_1.UiController, sse_gateway_1.SseGateway],
         providers: [prisma_service_1.PrismaService, rbac_service_1.RbacService],
     })

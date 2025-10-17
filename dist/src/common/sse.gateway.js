@@ -17,15 +17,31 @@ exports.pushTo = pushTo;
 const common_1 = require("@nestjs/common");
 const auth_guard_1 = require("./auth.guard");
 const rxjs_1 = require("rxjs");
+const presence_service_1 = require("../presence/presence.service");
 const subjects = new Map();
 let SseGateway = class SseGateway {
+    constructor(presence) {
+        this.presence = presence;
+    }
     events(req) {
-        let sub = subjects.get(req.userId);
+        const userId = req.userId;
+        if (!userId)
+            return new rxjs_1.Subject().asObservable();
+        // создаём Subject для личных событий (новые сообщения и т.д.)
+        let sub = subjects.get(userId);
         if (!sub) {
             sub = new rxjs_1.Subject();
-            subjects.set(req.userId, sub);
+            subjects.set(userId, sub);
         }
-        return sub.asObservable();
+        // --- присутствие ---
+        this.presence.markOnline(userId).catch(() => { });
+        req.on("close", () => {
+            this.presence.markOffline(userId).catch(() => { });
+        });
+        // объединяем персональный поток и поток событий присутствия
+        const personal$ = sub.asObservable();
+        const presence$ = this.presence.events$;
+        return (0, rxjs_1.merge)(personal$, presence$);
     }
 };
 exports.SseGateway = SseGateway;
@@ -38,8 +54,12 @@ __decorate([
     __metadata("design:returntype", rxjs_1.Observable)
 ], SseGateway.prototype, "events", null);
 exports.SseGateway = SseGateway = __decorate([
-    (0, common_1.Controller)("api")
+    (0, common_1.Controller)("api"),
+    __metadata("design:paramtypes", [presence_service_1.PresenceService])
 ], SseGateway);
+/**
+ * pushTo — послать событие конкретному пользователю
+ */
 function pushTo(userId, data) {
     const sub = subjects.get(userId);
     if (sub)
