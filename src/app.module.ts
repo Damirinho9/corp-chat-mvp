@@ -1,0 +1,29 @@
+import { Module } from "@nestjs/common";
+import { AuthModule } from "./auth/auth.module";
+import { UsersModule } from "./users/users.module";
+import { DepartmentsModule } from "./departments/departments.module";
+import { ChatsModule } from "./chats/chats.module";
+import { MessagesModule } from "./messages/messages.module";
+import { AdminModule } from "./admin/admin.module";
+import { PrismaService } from "./common/prisma.service";
+import { RbacService } from "./common/rbac/rbac.service";
+import { UiController } from "./ui/ui.controller";
+import { SseGateway } from "./common/sse.gateway";
+import { UploadsModule } from "./uploads/uploads.module";
+import { PresenceModule } from "./presence/presence.module";
+
+@Module({
+  imports: [
+    AuthModule,
+    UsersModule,
+    DepartmentsModule,
+    ChatsModule,
+    MessagesModule,
+    AdminModule,
+    UploadsModule,
+    PresenceModule, // ✅ Добавили модуль присутствия
+  ],
+  controllers: [UiController, SseGateway],
+  providers: [PrismaService, RbacService],
+})
+export class AppModule {}

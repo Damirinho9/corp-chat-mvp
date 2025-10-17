@@ -1,0 +1,25 @@
+# --- build stage ---
+FROM node:20-bullseye AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+# generate prisma client for postgres schema
+RUN npx prisma generate --schema=prisma/schema.postgres.prisma
+RUN npm run build
+
+# --- runtime stage ---
+FROM node:20-bullseye-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+COPY package*.json ./
+RUN npm ci --omit=dev
+COPY --from=builder /app/node_modules/.prisma /app/node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma /app/node_modules/@prisma
+COPY --from=builder /app/dist /app/dist
+COPY prisma/schema.postgres.prisma prisma/schema.postgres.prisma
+COPY src/ui/views src/ui/views
+COPY scripts/seed.cjs scripts/seed.cjs
+EXPOSE 3000
+# Use db push for cross-provider schema sync, then seed and start
+CMD ["sh","-c","npx prisma db push --schema=prisma/schema.postgres.prisma && node scripts/seed.cjs && node dist/main.js"]

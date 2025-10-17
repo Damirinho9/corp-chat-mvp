@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Corp Chat - App</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <style>
+    :root { --bg:#f6f7fb; --card:#fff; --line:#e9ebf0; --muted:#6b7280; --accent:#3b82f6; }
+    html,body { height:100%; }
+    body { margin:0; background:var(--bg); font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
+    .app { display:grid; grid-template-columns:320px 1fr; gap:16px; padding:16px; max-width:1200px; margin:0 auto; }
+    aside,main { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; }
+    .title { font-weight:700; margin-bottom:8px; }
+    .muted { color:var(--muted); font-size:12px; }
+    .list { list-style:none; padding:0; margin:0; }
+    .chat-btn { width:100%; text-align:left; border:1px solid var(--line); background:#fff; padding:8px 10px; border-radius:10px; cursor:pointer; }
+    .chat-btn:hover { border-color:var(--accent); }
+    .search input { width:100%; border:1px solid var(--line); border-radius:10px; padding:8px 10px; outline:none; }
+    .header { display:flex; align-items:center; justify-content:space-between; gap:8px; padding-bottom:8px; border-bottom:1px solid var(--line); margin-bottom:8px; }
+    #messages { height:60vh; overflow:auto; display:flex; flex-direction:column; gap:6px; padding-right:4px; }
+    .msg { max-width:70%; padding:8px 10px; border:1px solid var(--line); border-radius:12px; background:#fff; align-self:flex-start; }
+    .msg.me { align-self:flex-end; background:#eef5ff; border-color:#d8e6ff; }
+    .msg .meta { font-size:11px; color:var(--muted); margin-bottom:2px; }
+    .msg .text { white-space:pre-wrap; word-break:break-word; }
+    form#send { display:flex; gap:8px; margin-top:8px; }
+    form#send input { flex:1; border:1px solid var(--line); border-radius:10px; padding:10px 12px; outline:none; }
+    form#send button { border:none; background:var(--accent); color:#fff; padding:10px 14px; border-radius:10px; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <div class="title">Мои чаты</div>
+      <ul id="chats" class="list"></ul>
+      <div class="search" style="margin-top:16px">
+        <div class="title">Поиск разрешенных адресатов ЛС</div>
+        <input id="q" placeholder="имя или username" />
+        <ul id="recipients" class="list" style="margin-top:8px"></ul>
+      </div>
+    </aside>
+    <main>
+      <div class="header">
+        <div>
+          <div id="header" class="title">Выберите чат</div>
+          <div id="subheader" class="muted"></div>
+        </div>
+        <div class="muted">SSE: онлайн</div>
+      </div>
+
+      <div id="messages"></div>
+
+      <form id="send">
+        <input id="text" placeholder="Сообщение..." autofocus />
+        <button>Отправить</button>
+      </form>
+    </main>
+  </div>
+
+<script>
+let currentChatId=null,currentRecipientId=null,myUser=null;
+const userCache=new Map();const presenceMap={};
+
+function escapeHtml(s){return (s||'').toString().replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function fmtTime(ts){try{const d=new Date(ts);return new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}).format(d);}catch{return'';}}
+function badge(status){if(status==='ONLINE')return'● online';if(status==='AWAY')return'● away';return'○ offline';}
+function senderLabel(m){if(m.senderDisplayName)return m.senderDisplayName;if(m.sender?.displayName)return m.sender.displayName;if(myUser&&m.senderId===myUser.id)return'Я';const u=userCache.get(m.senderId);return u?.displayName||u?.username||('ID '+m.senderId);}
+function focusInput(){const el=document.getElementById('text');if(el)el.focus();}
+
+async function fetchMe(){const r=await fetch('/api/users/me');if(r.ok){myUser=await r.json();userCache.set(myUser.id,myUser);}}
+async function loadChats(){const r=await fetch('/api/chats');const data=await r.json();const ul=document.getElementById('chats');ul.innerHTML=data.map(c=>`<li><button class="chat-btn" data-id="${c.id}">${escapeHtml(c.name||'Чат '+c.id)}</button></li>`).join('');ul.querySelectorAll('button').forEach(b=>b.onclick=()=>openChat(+b.dataset.id,b.textContent));}
+async function fetchMessages(chatId){const r=await fetch(`/api/chats/${chatId}/messages?limit=50`);const msgs=await r.json();msgs.forEach(m=>{if(m.sender)userCache.set(m.sender.id,m.sender)});return msgs;}
+async function openChat(id,title){currentChatId=id;currentRecipientId=null;document.getElementById('header').textContent=title;document.getElementById('messages').innerHTML='';const msgs=await fetchMessages(id);render(msgs);}
+async function openDm(recipientId,title){currentRecipientId=recipientId;const r=await fetch('/api/chats/dm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({recipientId})});if(r.ok){const chat=await r.json();currentChatId=chat.id;document.getElementById('header').textContent='ЛС';document.getElementById('subheader').textContent=title;const msgs=await fetchMessages(chat.id);render(msgs);}else alert('Ошибка DM');}
+
+function render(msgs){const box=document.getElementById('messages');const frag=document.createDocumentFragment();msgs.forEach(m=>frag.appendChild(renderMsgEl(m)));box.appendChild(frag);box.scrollTop=box.scrollHeight;}
+function renderMsgEl(m){const div=document.createElement('div');div.className='msg '+((myUser&&m.senderId===myUser.id)?'me':'');div.innerHTML=`<div class="meta">${escapeHtml(senderLabel(m))} · ${escapeHtml(fmtTime(m.createdAt))}</div><div class="text">${escapeHtml(m.content||'')}</div>`;return div;}
+
+document.getElementById('send').onsubmit=async e=>{e.preventDefault();const text=document.getElementById('text').value.trim();if(!text)return;document.getElementById('text').value='';const body=currentRecipientId?{recipientId:currentRecipientId,content:text}:{chatId:currentChatId,content:text};const url=currentRecipientId?'/api/messages/dm':'/api/messages/chat';await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});focusInput();};
+
+document.getElementById('q').oninput=async e=>{const q=e.target.value;const r=await fetch('/api/users/search?q='+encodeURIComponent(q));const users=await r.json();users.forEach(u=>userCache.set(u.id,u));const ul=document.getElementById('recipients');ul.innerHTML=users.map(u=>`<li><button class="chat-btn" data-id="${u.id}">${escapeHtml(u.displayName)} (${escapeHtml(u.username)})</button></li>`).join('');ul.querySelectorAll('button').forEach(b=>b.onclick=()=>openDm(+b.dataset.id,b.textContent));};
+
+function renderPresenceBadges(){if(currentRecipientId){const st=presenceMap[currentRecipientId]||'OFFLINE';document.getElementById('subheader').textContent='Статус: '+badge(st);}}
+
+function connectSSE(){const es=new EventSource('/api/events');es.onmessage=e=>{try{const msg=JSON.parse(e.data);if(msg?.type==='message'){appendMessage(msg);}else if(msg?.type==='presence'){presenceMap[msg.userId]=msg.status;renderPresenceBadges();}}catch{}};es.onerror=()=>console.log('SSE reconnect...');}
+function appendMessage(evt){if(evt.chatId!==currentChatId)return;const el=renderMsgEl(evt);const box=document.getElementById('messages');box.appendChild(el);box.scrollTop=box.scrollHeight;}
+
+function pingPresence(){fetch('/api/presence/ping',{method:'POST'}).catch(()=>{});}
+setInterval(()=>pingPresence(),30000);
+let lastPing=0;["mousemove","keydown","click"].forEach(ev=>document.addEventListener(ev,()=>{const now=Date.now();if(now-lastPing>10000){lastPing=now;pingPresence();}}));
+
+(async function init(){await fetchMe();await loadChats();connectSSE();focusInput();})();
+</script>
+</body>
+</html>

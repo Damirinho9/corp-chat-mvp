@@ -1,0 +1,59 @@
+### 1) Login as employee
+POST http://localhost:3000/api/auth/login
+Content-Type: application/json
+
+{ "username": "emp_it_1", "password": "emp_it_1" }
+
+### 2) Me
+GET http://localhost:3000/api/users/me
+
+### 3) Search allowed DM recipients - should include head_it and admins
+GET http://localhost:3000/api/users/search?q=head
+
+### 4) Create DM with own head - allow
+POST http://localhost:3000/api/chats/dm
+Content-Type: application/json
+
+{ "recipientId": 6 }  # replace with actual head_it id if different
+
+### 5) Send DM to own head - allow
+POST http://localhost:3000/api/messages/dm
+Content-Type: application/json
+
+{ "recipientId": 6, "content": "ping to head" }
+
+### 6) Send DM to employee of other dept - deny 403
+POST http://localhost:3000/api/messages/dm
+Content-Type: application/json
+
+{ "recipientId": 8, "content": "hello" }
+
+### 7) Login as head_sales
+POST http://localhost:3000/api/auth/login
+Content-Type: application/json
+
+{ "username": "head_sales", "password": "head_sales" }
+
+### 8) Send DM head->employee own dept - allow
+POST http://localhost:3000/api/messages/dm
+Content-Type: application/json
+
+{ "recipientId": 4, "content": "sales hello" }  # adjust id
+
+### 9) Send DM head->employee foreign dept - deny
+POST http://localhost:3000/api/messages/dm
+Content-Type: application/json
+
+{ "recipientId": 10, "content": "not allowed" }  # adjust id
+
+### 10) Admin - audit log and read DM
+POST http://localhost:3000/api/auth/login
+Content-Type: application/json
+
+{ "username": "admin1", "password": "admin1" }
+
+### Audit
+GET http://localhost:3000/api/admin/audit
+
+### Read DM between two users
+GET http://localhost:3000/api/admin/dms?a=1&b=3

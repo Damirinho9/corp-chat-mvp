@@ -1,0 +1,122 @@
+// prisma/schema.postgres.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             Int              @id @default(autoincrement())
+  username       String           @unique
+  displayName    String?
+  passwordHash   String
+  role           String
+  departmentId   Int?
+  department     Department?      @relation(fields: [departmentId], references: [id])
+
+  // новые поля
+  status         String           @default("OFFLINE")
+  lastActiveAt   DateTime?
+
+  memberships    Membership[]
+  chatMemberships ChatMember[]
+  messages       Message[]         @relation("UserMessages")
+  uploads        Attachment[]
+  auditLogs      AuditLog[]        @relation("ActorLogs")
+
+  managedBy      DirectManager?    @relation("DM_employee")
+  manages        DirectManager[]   @relation("DM_manager")
+
+  @@index([status])
+}
+
+model Department {
+  id             Int          @id @default(autoincrement())
+  name           String
+  memberships    Membership[]
+  chats          Chat[]
+}
+
+model Chat {
+  id             Int          @id @default(autoincrement())
+  name           String
+  type           String
+  systemKey      String?      @unique
+  departmentId   Int?
+  department     Department?  @relation(fields: [departmentId], references: [id])
+  members        ChatMember[]
+  messages       Message[]
+}
+
+model ChatMember {
+  id        Int     @id @default(autoincrement())
+  chatId    Int
+  userId    Int
+  chat      Chat    @relation(fields: [chatId], references: [id])
+  user      User    @relation(fields: [userId], references: [id])
+}
+
+model Message {
+  id          Int           @id @default(autoincrement())
+  chatId      Int
+  senderId    Int
+  content     String
+  createdAt   DateTime      @default(now())
+
+  chat        Chat          @relation(fields: [chatId], references: [id])
+  sender      User          @relation("UserMessages", fields: [senderId], references: [id])
+  attachments Attachment[]
+}
+
+model Membership {
+  id            Int          @id @default(autoincrement())
+  userId        Int
+  departmentId  Int?
+  roleId        Int
+  user          User         @relation(fields: [userId], references: [id])
+  department    Department?  @relation(fields: [departmentId], references: [id])
+}
+
+model DirectManager {
+  id           Int   @id @default(autoincrement())
+  employeeId   Int   @unique
+  managerId    Int
+
+  employee     User  @relation("DM_employee", fields: [employeeId], references: [id])
+  manager      User  @relation("DM_manager", fields: [managerId], references: [id])
+}
+
+model Attachment {
+  id            Int       @id @default(autoincrement())
+  url           String
+  filename      String
+  mimeType      String
+  size          Int
+  width         Int?
+  height        Int?
+  uploadedById  Int
+  messageId     Int?
+  createdAt     DateTime  @default(now())
+
+  uploadedBy    User      @relation(fields: [uploadedById], references: [id])
+  message       Message?  @relation(fields: [messageId], references: [id])
+
+  @@index([messageId])
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  actorId    Int
+  action     String
+  resource   String
+  targetId   Int?
+  outcome    String
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  actor      User     @relation("ActorLogs", fields: [actorId], references: [id])
+}

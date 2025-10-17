@@ -1,0 +1,33 @@
+version: "3.8"
+
+services:
+  backend:
+    image: your-backend-image
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    volumes:
+      - ./.env:/app/.env:ro
+      - ./logs:/app/logs            # <--- Проброс папки logs
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_DB: yourdbname
+      POSTGRES_USER: youruser
+      POSTGRES_PASSWORD: yourpassword
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - 8080:8080
+
+volumes:
+  db_data:

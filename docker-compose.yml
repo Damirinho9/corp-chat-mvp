@@ -1,0 +1,27 @@
+version: "3.9"
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: corpchat
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  api:
+    build: .
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/corpchat?schema=public
+      JWT_ACCESS_SECRET: change_me_access
+      JWT_REFRESH_SECRET: change_me_refresh
+      PASSWORD_SALT_ROUNDS: 10
+      PORT: 3000
+    depends_on: [db]
+    ports: ["3000:3000"]
+    command: sh -c "npx prisma migrate deploy --schema=prisma/schema.postgres.prisma && node dist/main.js"
+
+volumes:
+  pgdata: {}
