@@ -2,6 +2,7 @@
 WORKDIR /app
 ENV CI=true
 COPY package.json package-lock.json ./
+COPY prisma ./prisma
 RUN npm ci
 COPY prisma ./prisma
 RUN npm run prisma:pg:generate
@@ -18,7 +19,6 @@ ENV NODE_ENV=production
 RUN mkdir -p /app/logs /app/uploads
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-COPY prisma ./prisma
 
 EXPOSE 3000
 
