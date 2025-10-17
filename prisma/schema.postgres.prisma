@@ -1,7 +1,7 @@
-// prisma/schema.postgres.prisma
-
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+  output          = "../node_modules/.prisma/client-postgres"
 }
 
 datasource db {
@@ -10,113 +10,121 @@ datasource db {
 }
 
 model User {
-  id             Int              @id @default(autoincrement())
-  username       String           @unique
-  displayName    String?
-  passwordHash   String
-  role           String
-  departmentId   Int?
-  department     Department?      @relation(fields: [departmentId], references: [id])
+  id           Int         @id @default(autoincrement())
+  name         String
+  email        String      @unique
+  password     String
 
-  // новые поля
-  status         String           @default("OFFLINE")
-  lastActiveAt   DateTime?
+  roleId       Int?        @default(2) // по желанию: 1=ADMIN, 2=USER
+  role         Role?       @relation(fields: [roleId], references: [id])
 
-  memberships    Membership[]
+  departmentId Int?
+  department   Department? @relation("UserDepartment", fields: [departmentId], references: [id])
+
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  managerId    Int?
+
+  messages        Message[]       @relation("UserMessages")
+  uploads         Attachment[]    @relation("UserUploads")
+  logs            AuditLog[]      @relation("ActorLogs")
+  memberships     Membership[]
+  managed         DirectManager[] @relation("DM_manager")
+  reports         DirectManager[] @relation("DM_employee")
   chatMemberships ChatMember[]
-  messages       Message[]         @relation("UserMessages")
-  uploads        Attachment[]
-  auditLogs      AuditLog[]        @relation("ActorLogs")
+}
 
-  managedBy      DirectManager?    @relation("DM_employee")
-  manages        DirectManager[]   @relation("DM_manager")
-
-  @@index([status])
+model Role {
+  id    Int     @id @default(autoincrement())
+  name  String  @unique
+  users User[]
 }
 
 model Department {
-  id             Int          @id @default(autoincrement())
-  name           String
-  memberships    Membership[]
-  chats          Chat[]
+  id           Int           @id @default(autoincrement())
+  name         String         @unique
+  users        User[]         @relation("UserDepartment")
+  chats        Chat[]
+  memberships  Membership[]
 }
 
 model Chat {
-  id             Int          @id @default(autoincrement())
-  name           String
-  type           String
-  systemKey      String?      @unique
-  departmentId   Int?
-  department     Department?  @relation(fields: [departmentId], references: [id])
-  members        ChatMember[]
-  messages       Message[]
+  id           Int          @id @default(autoincrement())
+  name         String
+  type         String
+  systemKey    String?      @unique
+  departmentId Int?
+  department   Department?  @relation(fields: [departmentId], references: [id])
+  members      ChatMember[]
+  messages     Message[]
 }
 
 model ChatMember {
-  id        Int     @id @default(autoincrement())
-  chatId    Int
-  userId    Int
-  chat      Chat    @relation(fields: [chatId], references: [id])
-  user      User    @relation(fields: [userId], references: [id])
+  id     Int  @id @default(autoincrement())
+  chatId Int
+  userId Int
+  chat   Chat @relation(fields: [chatId], references: [id])
+  user   User @relation(fields: [userId], references: [id])
 }
 
 model Message {
-  id          Int           @id @default(autoincrement())
-  chatId      Int
-  senderId    Int
-  content     String
-  createdAt   DateTime      @default(now())
+  id        Int      @id @default(autoincrement())
+  chatId    Int
+  senderId  Int
+  content   String
+  createdAt DateTime @default(now())
 
-  chat        Chat          @relation(fields: [chatId], references: [id])
-  sender      User          @relation("UserMessages", fields: [senderId], references: [id])
+  chat        Chat         @relation(fields: [chatId], references: [id])
+  sender      User         @relation("UserMessages", fields: [senderId], references: [id])
   attachments Attachment[]
 }
 
 model Membership {
-  id            Int          @id @default(autoincrement())
-  userId        Int
-  departmentId  Int?
-  roleId        Int
-  user          User         @relation(fields: [userId], references: [id])
-  department    Department?  @relation(fields: [departmentId], references: [id])
+  id           Int         @id @default(autoincrement())
+  userId       Int
+  departmentId Int?
+  roleId       Int
+
+  user         User        @relation(fields: [userId], references: [id])
+  department   Department? @relation(fields: [departmentId], references: [id])
 }
 
 model DirectManager {
-  id           Int   @id @default(autoincrement())
-  employeeId   Int   @unique
-  managerId    Int
+  id         Int @id @default(autoincrement())
+  employeeId Int @unique
+  managerId  Int
 
-  employee     User  @relation("DM_employee", fields: [employeeId], references: [id])
-  manager      User  @relation("DM_manager", fields: [managerId], references: [id])
+  employee User @relation("DM_employee", fields: [employeeId], references: [id])
+  manager  User @relation("DM_manager", fields: [managerId], references: [id])
 }
 
 model Attachment {
-  id            Int       @id @default(autoincrement())
-  url           String
-  filename      String
-  mimeType      String
-  size          Int
-  width         Int?
-  height        Int?
-  uploadedById  Int
-  messageId     Int?
-  createdAt     DateTime  @default(now())
+  id           Int      @id @default(autoincrement())
+  url          String
+  filename     String
+  mimeType     String
+  size         Int
+  width        Int?
+  height       Int?
+  uploadedById Int
+  messageId    Int?
+  createdAt    DateTime @default(now())
 
-  uploadedBy    User      @relation(fields: [uploadedById], references: [id])
-  message       Message?  @relation(fields: [messageId], references: [id])
+  uploadedBy User     @relation("UserUploads", fields: [uploadedById], references: [id])
+  message    Message? @relation(fields: [messageId], references: [id])
 
   @@index([messageId])
 }
 
 model AuditLog {
-  id         Int      @id @default(autoincrement())
-  actorId    Int
-  action     String
-  resource   String
-  targetId   Int?
-  outcome    String
-  reason     String?
-  createdAt  DateTime @default(now())
+  id        Int      @id @default(autoincrement())
+  actorId   Int
+  action    String
+  resource  String
+  targetId  Int?
+  outcome   String
+  reason    String?
+  createdAt DateTime @default(now())
 
-  actor      User     @relation("ActorLogs", fields: [actorId], references: [id])
+  actor User @relation("ActorLogs", fields: [actorId], references: [id])
 }
