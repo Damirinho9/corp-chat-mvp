@@ -1,9 +1,14 @@
 ﻿services:
   - type: web
     name: corpchat-backend
-    runtime: docker
+    env: docker
     plan: starter
     autoDeploy: true
+    healthCheckPath: /
+    disk:
+      name: corpchat-data
+      mountPath: /app/uploads
+      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
@@ -31,14 +36,6 @@
         value: info
       - key: PRESENCE_AWAY_MS
         value: "300000"
-    healthCheckPath: /
-    disks:
-      - name: corpchat-uploads
-        mountPath: /app/uploads
-        sizeGB: 1
-      - name: corpchat-logs
-        mountPath: /app/logs
-        sizeGB: 1
 
 databases:
   - name: corpchat-postgres
