@@ -22,7 +22,7 @@ RUN mkdir -p /app/logs /app/uploads
 # dependencies and build artifacts
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-
+COPY src/ui/views ./dist/src/ui/views
 # 👇 добавляем эту строку (вот чего не хватает)
 COPY prisma ./prisma
 
