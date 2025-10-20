@@ -11,6 +11,10 @@ FROM node:20-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# 👇 добавляем фиктивный аргумент, чтобы форсировать пересборку
+ARG BUILD_DATE=2025-10-20
+
 RUN npm run build
 
 # 3️⃣ Stage: runner
@@ -23,7 +27,6 @@ RUN mkdir -p /app/logs /app/uploads
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY src/ui/views ./dist/ui/views
-# 👇 добавляем эту строку (вот чего не хватает)
 COPY prisma ./prisma
 
 EXPOSE 3000
@@ -32,4 +35,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD wget -qO- http://
 
 COPY start.sh ./start.sh
 RUN chmod +x ./start.sh
+
 CMD ["./start.sh"]
