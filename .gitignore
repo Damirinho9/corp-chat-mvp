@@ -1,13 +1,20 @@
-# Логи
+# Logs
 logs/
 !logs/.gitkeep
 
-# Игнорировать только корневую папку uploads (куда грузятся файлы)
+# Uploads
 uploads/
 !uploads/.gitkeep
 
-# Но не игнорировать исходный код модуля в src/uploads
-!src/uploads/
-
-# Node modules
+# Dependencies
 node_modules/
+
+# Build output
+dist/
+
+# Ignore environment files
+.env
+
+# Allow static HTML views for UI
+!src/ui/views/
+!src/ui/views/*.html

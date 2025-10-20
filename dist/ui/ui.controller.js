@@ -11,18 +11,28 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UiController = void 0;
 const common_1 = require("@nestjs/common");
-const path_1 = __importDefault(require("path"));
+const path_1 = require("path");
 let UiController = class UiController {
-    login(res) { res.sendFile(path_1.default.join(process.cwd(), "src/ui/views/login.html")); }
-    app(res) { res.sendFile(path_1.default.join(process.cwd(), "src/ui/views/app.html")); }
-    admin(res) { res.sendFile(path_1.default.join(process.cwd(), "src/ui/views/admin.html")); }
-    css(res) { res.type("text/css").send("body{font-family:sans-serif} .app{display:flex;gap:16px} aside{width:280px}"); }
+    constructor() {
+        this.viewsRoot = (0, path_1.join)(__dirname, "views");
+    }
+    login(res) {
+        res.sendFile("login.html", { root: this.viewsRoot });
+    }
+    app(res) {
+        res.sendFile("app.html", { root: this.viewsRoot });
+    }
+    admin(res) {
+        res.sendFile("admin.html", { root: this.viewsRoot });
+    }
+    css(res) {
+        res
+            .type("text/css")
+            .send("body{font-family:sans-serif} .app{display:flex;gap:16px} aside{width:280px}");
+    }
 };
 exports.UiController = UiController;
 __decorate([
