@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, Param, Query } from '@nestjs/common';
 import { ChatsService } from './chats.service';
 import { MessagesService } from '../messages/messages.service';
 import { PrismaService } from '../common/prisma.service';
@@ -17,7 +17,36 @@ export class ChatsController {
     return [];
   }
 
-  // ✅ исправленный метод для DM: обязательно указываем type: 'DM'
+  // ✅ новый эндпоинт для получения сообщений чата
+  @Get(':id/messages')
+  async getMessages(
+    @Param('id') id: string,
+    @Query('limit') limit: string | number = 50,
+  ) {
+    const chatId = Number(id);
+    const take = Math.min(Math.max(Number(limit) || 50, 1), 200);
+
+    const rows = await this.prisma.message.findMany({
+      where: { chatId },
+      orderBy: { createdAt: 'asc' },
+      take,
+      include: {
+        sender: { select: { id: true, username: true, displayName: true } },
+      },
+    });
+
+    // Отдаём в формате, который ожидает фронт
+    return rows.map((m) => ({
+      id: m.id,
+      chatId: m.chatId,
+      senderId: m.senderId,
+      content: m.content,
+      createdAt: m.createdAt,
+      sender: m.sender,
+    }));
+  }
+
+  // ✅ исправленный метод для DM
   @Post('dm')
   async getOrCreateDm(@Req() req: any, @Body() body: { recipientId: number }) {
     const userId = Number(req.userId);
@@ -27,7 +56,6 @@ export class ChatsController {
       return { error: 'Некорректный recipientId' };
     }
 
-    // детерминированное имя чата
     const [a, b] = [userId, recipientId].sort((x, y) => x - y);
     const dmName = `dm:${a}-${b}`;
 
@@ -36,7 +64,7 @@ export class ChatsController {
       where: { name: dmName, type: 'DM' },
     });
 
-    // 2) если нет — создаём (type обязателен в модели)
+    // 2) если нет — создаём
     if (!chat) {
       chat = await this.prisma.chat.create({
         data: { name: dmName, type: 'DM' },
