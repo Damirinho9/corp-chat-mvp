@@ -96,10 +96,13 @@ async function loadChats(){
 }
 
 async function fetchMessages(chatId){
-  const r=await authFetch(`/api/chats/${chatId}/messages?limit=50`);
-  const msgs=await r.json().catch(()=>[]);
-  msgs.forEach(m=>{if(m.sender)userCache.set(m.sender.id,m.sender)});
-  return msgs;
+  const r = await authFetch(`/api/chats/${chatId}/messages?limit=50`);
+  if (!r.ok) return [];
+  const msgs = await r.json().catch(() => []);
+  (Array.isArray(msgs) ? msgs : []).forEach(m=>{
+    if (m.sender) userCache.set(m.sender.id, m.sender);
+  });
+  return Array.isArray(msgs) ? msgs : [];
 }
 
 async function openChat(id,title){
@@ -138,15 +141,60 @@ function renderMsgEl(m){
   return div;
 }
 
-document.getElementById('send').onsubmit=async e=>{
+document.getElementById('send').onsubmit = async (e) => {
   e.preventDefault();
-  const text=document.getElementById('text').value.trim();
-  if(!text)return;
-  document.getElementById('text').value='';
-  const body=currentRecipientId?{recipientId:currentRecipientId,content:text}:{chatId:currentChatId,content:text};
-  const url=currentRecipientId?'/api/chats/messages/dm':'/api/chats/messages/chat';
-  await authFetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  focusInput();
+
+  const input = document.getElementById('text');
+  const text = input.value.trim();
+  if (!text || !currentChatId) return;
+
+  input.value = '';
+
+  const body = currentRecipientId
+    ? { recipientId: currentRecipientId, content: text }
+    : { chatId: currentChatId, content: text };
+
+  const url = currentRecipientId
+    ? '/api/chats/messages/dm'
+    : '/api/chats/messages/chat';
+
+  try {
+    const res = await authFetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      console.error('Не удалось отправить:', res.status);
+      alert('Не удалось отправить сообщение');
+      return;
+    }
+
+    const created = await res.json().catch(() => null);
+
+    // 🔹 моментальный апдейт UI
+    if (created && created.chatId === currentChatId) {
+      appendMessage({
+        id: created.id,
+        chatId: created.chatId,
+        senderId: created.senderId ?? (myUser?.id ?? 0),
+        content: created.content ?? text,
+        createdAt: created.createdAt ?? new Date().toISOString(),
+        sender: created.sender ?? myUser ?? null,
+        type: 'message',
+      });
+    } else {
+      // 🔹 fallback: перечитать историю, если ответ пустой
+      const msgs = await fetchMessages(currentChatId);
+      render(msgs);
+    }
+  } catch (e) {
+    console.error(e);
+    alert('Сеть недоступна');
+  } finally {
+    input.focus();
+  }
 };
 
 document.getElementById('q').oninput=async e=>{
