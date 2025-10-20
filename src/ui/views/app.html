@@ -167,15 +167,22 @@ function renderPresenceBadges(){
 }
 
 function connectSSE(){
-  const es=new EventSource('/api/events');
-  es.onmessage=e=>{
-    try{
-      const msg=JSON.parse(e.data);
-      if(msg?.type==='message'){appendMessage(msg);}
-      else if(msg?.type==='presence'){presenceMap[msg.userId]=msg.status;renderPresenceBadges();}
-    }catch{}
+  const token = localStorage.getItem('accessToken');
+  const url = token
+    ? `/api/events?access_token=${encodeURIComponent(token)}`
+    : '/api/events';
+  const es = new EventSource(url);
+  es.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg?.type === 'message') appendMessage(msg);
+      else if (msg?.type === 'presence') {
+        presenceMap[msg.userId] = msg.status;
+        renderPresenceBadges();
+      }
+    } catch {}
   };
-  es.onerror=()=>console.log('SSE reconnect...');
+  es.onerror = () => console.log('SSE reconnect...');
 }
 
 function appendMessage(evt){
