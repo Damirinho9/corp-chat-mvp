@@ -57,6 +57,15 @@
   </div>
 
 <script>
+// === Добавляем авторизацию во все запросы ===
+function authFetch(input, init = {}) {
+  const token = localStorage.getItem('accessToken');
+  const headers = new Headers(init.headers || {});
+  if (token) headers.set('Authorization', 'Bearer ' + token);
+  return fetch(input, { ...init, headers });
+}
+
+// === Оригинальная логика приложения ===
 let currentChatId=null,currentRecipientId=null,myUser=null;
 const userCache=new Map();const presenceMap={};
 
@@ -66,29 +75,134 @@ function badge(status){if(status==='ONLINE')return'● online';if(status==='AWAY
 function senderLabel(m){if(m.senderDisplayName)return m.senderDisplayName;if(m.sender?.displayName)return m.sender.displayName;if(myUser&&m.senderId===myUser.id)return'Я';const u=userCache.get(m.senderId);return u?.displayName||u?.username||('ID '+m.senderId);}
 function focusInput(){const el=document.getElementById('text');if(el)el.focus();}
 
-async function fetchMe(){const r=await fetch('/api/users/me');if(r.ok){myUser=await r.json();userCache.set(myUser.id,myUser);}}
-async function loadChats(){const r=await fetch('/api/chats');const data=await r.json();const ul=document.getElementById('chats');ul.innerHTML=data.map(c=>`<li><button class="chat-btn" data-id="${c.id}">${escapeHtml(c.name||'Чат '+c.id)}</button></li>`).join('');ul.querySelectorAll('button').forEach(b=>b.onclick=()=>openChat(+b.dataset.id,b.textContent));}
-async function fetchMessages(chatId){const r=await fetch(`/api/chats/${chatId}/messages?limit=50`);const msgs=await r.json();msgs.forEach(m=>{if(m.sender)userCache.set(m.sender.id,m.sender)});return msgs;}
-async function openChat(id,title){currentChatId=id;currentRecipientId=null;document.getElementById('header').textContent=title;document.getElementById('messages').innerHTML='';const msgs=await fetchMessages(id);render(msgs);}
-async function openDm(recipientId,title){currentRecipientId=recipientId;const r=await fetch('/api/chats/dm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({recipientId})});if(r.ok){const chat=await r.json();currentChatId=chat.id;document.getElementById('header').textContent='ЛС';document.getElementById('subheader').textContent=title;const msgs=await fetchMessages(chat.id);render(msgs);}else alert('Ошибка DM');}
+// === Все fetch → authFetch ===
+async function fetchMe(){
+  const r=await authFetch('/api/users/me');
+  if(r.ok){
+    myUser=await r.json();
+    userCache.set(myUser.id,myUser);
+  } else {
+    console.warn('401 /api/users/me');
+  }
+}
 
-function render(msgs){const box=document.getElementById('messages');const frag=document.createDocumentFragment();msgs.forEach(m=>frag.appendChild(renderMsgEl(m)));box.appendChild(frag);box.scrollTop=box.scrollHeight;}
-function renderMsgEl(m){const div=document.createElement('div');div.className='msg '+((myUser&&m.senderId===myUser.id)?'me':'');div.innerHTML=`<div class="meta">${escapeHtml(senderLabel(m))} · ${escapeHtml(fmtTime(m.createdAt))}</div><div class="text">${escapeHtml(m.content||'')}</div>`;return div;}
+async function loadChats(){
+  const r=await authFetch('/api/chats');
+  if(!r.ok) return console.error('Не удалось загрузить чаты',r.status);
+  const data=await r.json();
+  const ul=document.getElementById('chats');
+  ul.innerHTML=(Array.isArray(data)?data:[]).map(c=>`<li><button class="chat-btn" data-id="${c.id}">${escapeHtml(c.name||'Чат '+c.id)}</button></li>`).join('');
+  ul.querySelectorAll('button').forEach(b=>b.onclick=()=>openChat(+b.dataset.id,b.textContent));
+}
 
-document.getElementById('send').onsubmit=async e=>{e.preventDefault();const text=document.getElementById('text').value.trim();if(!text)return;document.getElementById('text').value='';const body=currentRecipientId?{recipientId:currentRecipientId,content:text}:{chatId:currentChatId,content:text};const url=currentRecipientId?'/api/messages/dm':'/api/messages/chat';await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});focusInput();};
+async function fetchMessages(chatId){
+  const r=await authFetch(`/api/chats/${chatId}/messages?limit=50`);
+  const msgs=await r.json().catch(()=>[]);
+  msgs.forEach(m=>{if(m.sender)userCache.set(m.sender.id,m.sender)});
+  return msgs;
+}
 
-document.getElementById('q').oninput=async e=>{const q=e.target.value;const r=await fetch('/api/users/search?q='+encodeURIComponent(q));const users=await r.json();users.forEach(u=>userCache.set(u.id,u));const ul=document.getElementById('recipients');ul.innerHTML=users.map(u=>`<li><button class="chat-btn" data-id="${u.id}">${escapeHtml(u.displayName)} (${escapeHtml(u.username)})</button></li>`).join('');ul.querySelectorAll('button').forEach(b=>b.onclick=()=>openDm(+b.dataset.id,b.textContent));};
+async function openChat(id,title){
+  currentChatId=id;currentRecipientId=null;
+  document.getElementById('header').textContent=title;
+  document.getElementById('messages').innerHTML='';
+  const msgs=await fetchMessages(id);
+  render(msgs);
+}
 
-function renderPresenceBadges(){if(currentRecipientId){const st=presenceMap[currentRecipientId]||'OFFLINE';document.getElementById('subheader').textContent='Статус: '+badge(st);}}
+async function openDm(recipientId,title){
+  currentRecipientId=recipientId;
+  const r=await authFetch('/api/chats/dm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({recipientId})});
+  if(r.ok){
+    const chat=await r.json();
+    currentChatId=chat.id;
+    document.getElementById('header').textContent='ЛС';
+    document.getElementById('subheader').textContent=title;
+    const msgs=await fetchMessages(chat.id);
+    render(msgs);
+  } else alert('Ошибка DM');
+}
 
-function connectSSE(){const es=new EventSource('/api/events');es.onmessage=e=>{try{const msg=JSON.parse(e.data);if(msg?.type==='message'){appendMessage(msg);}else if(msg?.type==='presence'){presenceMap[msg.userId]=msg.status;renderPresenceBadges();}}catch{}};es.onerror=()=>console.log('SSE reconnect...');}
-function appendMessage(evt){if(evt.chatId!==currentChatId)return;const el=renderMsgEl(evt);const box=document.getElementById('messages');box.appendChild(el);box.scrollTop=box.scrollHeight;}
+function render(msgs){
+  const box=document.getElementById('messages');
+  const frag=document.createDocumentFragment();
+  (msgs||[]).forEach(m=>frag.appendChild(renderMsgEl(m)));
+  box.appendChild(frag);
+  box.scrollTop=box.scrollHeight;
+}
 
-function pingPresence(){fetch('/api/presence/ping',{method:'POST'}).catch(()=>{});}
+function renderMsgEl(m){
+  const div=document.createElement('div');
+  div.className='msg '+((myUser&&m.senderId===myUser.id)?'me':'');
+  div.innerHTML=`<div class="meta">${escapeHtml(senderLabel(m))} · ${escapeHtml(fmtTime(m.createdAt))}</div><div class="text">${escapeHtml(m.content||'')}</div>`;
+  return div;
+}
+
+document.getElementById('send').onsubmit=async e=>{
+  e.preventDefault();
+  const text=document.getElementById('text').value.trim();
+  if(!text)return;
+  document.getElementById('text').value='';
+  const body=currentRecipientId?{recipientId:currentRecipientId,content:text}:{chatId:currentChatId,content:text};
+  const url=currentRecipientId?'/api/chats/messages/dm':'/api/chats/messages/chat';
+  await authFetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  focusInput();
+};
+
+document.getElementById('q').oninput=async e=>{
+  const q=e.target.value;
+  const r=await authFetch('/api/users/search?q='+encodeURIComponent(q));
+  const users=await r.json().catch(()=>[]);
+  users.forEach(u=>userCache.set(u.id,u));
+  const ul=document.getElementById('recipients');
+  ul.innerHTML=(Array.isArray(users)?users:[]).map(u=>`<li><button class="chat-btn" data-id="${u.id}">${escapeHtml(u.displayName)} (${escapeHtml(u.username)})</button></li>`).join('');
+  ul.querySelectorAll('button').forEach(b=>b.onclick=()=>openDm(+b.dataset.id,b.textContent));
+};
+
+function renderPresenceBadges(){
+  if(currentRecipientId){
+    const st=presenceMap[currentRecipientId]||'OFFLINE';
+    document.getElementById('subheader').textContent='Статус: '+badge(st);
+  }
+}
+
+function connectSSE(){
+  const es=new EventSource('/api/events');
+  es.onmessage=e=>{
+    try{
+      const msg=JSON.parse(e.data);
+      if(msg?.type==='message'){appendMessage(msg);}
+      else if(msg?.type==='presence'){presenceMap[msg.userId]=msg.status;renderPresenceBadges();}
+    }catch{}
+  };
+  es.onerror=()=>console.log('SSE reconnect...');
+}
+
+function appendMessage(evt){
+  if(evt.chatId!==currentChatId)return;
+  const el=renderMsgEl(evt);
+  const box=document.getElementById('messages');
+  box.appendChild(el);
+  box.scrollTop=box.scrollHeight;
+}
+
+function pingPresence(){
+  authFetch('/api/presence/ping',{method:'POST'}).catch(()=>{});
+}
+
 setInterval(()=>pingPresence(),30000);
-let lastPing=0;["mousemove","keydown","click"].forEach(ev=>document.addEventListener(ev,()=>{const now=Date.now();if(now-lastPing>10000){lastPing=now;pingPresence();}}));
+let lastPing=0;
+["mousemove","keydown","click"].forEach(ev=>document.addEventListener(ev,()=>{
+  const now=Date.now();
+  if(now-lastPing>10000){lastPing=now;pingPresence();}
+}));
 
-(async function init(){await fetchMe();await loadChats();connectSSE();focusInput();})();
+(async function init(){
+  await fetchMe();
+  await loadChats();
+  connectSSE();
+  focusInput();
+})();
 </script>
 </body>
 </html>

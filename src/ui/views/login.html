@@ -8,8 +8,8 @@
   <style>
     :root { --bg:#f6f7fb; --card:#fff; --line:#e9ebf0; --muted:#6b7280; --accent:#3b82f6; --danger:#ef4444; }
     html,body { height:100%; }
-    body { margin:0; background:var(--bg); font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; display:grid; place-items:center; }
-    .card { width:min(420px, 92vw); background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px; box-shadow:0 4px 30px rgba(0,0,0,0.04); }
+    body { margin:0; background:var(--bg); font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; display:grid; place-items:center; }
+    .card { width:min(420px,92vw); background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px; box-shadow:0 4px 30px rgba(0,0,0,0.04); }
     h1 { margin:0 0 6px 0; font-size:20px; }
     .muted { color:var(--muted); font-size:12px; margin-bottom:14px; }
     form { display:flex; flex-direction:column; gap:10px; }
@@ -31,32 +31,48 @@
     </form>
   </div>
 
-<script>
-const f = document.getElementById('f');
-const err = document.getElementById('error');
-document.getElementById('username').focus();
+  <script>
+    const form = document.getElementById('f');
+    const errorBox = document.getElementById('error');
+    const usernameEl = document.getElementById('username');
 
-f.onsubmit = async (e) => {
-  e.preventDefault();
-  err.textContent = '';
-  const form = new FormData(f);
-  const payload = { username: form.get('username'), password: form.get('password') };
-  try {
-    const r = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json' },
-      body: JSON.stringify(payload)
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorBox.textContent = '';
+
+      const username = form.username.value.trim();
+      const password = form.password.value;
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          errorBox.textContent = data?.message || 'Ошибка входа';
+          return;
+        }
+
+        // 👇 Сохраняем токен в localStorage
+        if (data?.accessToken) {
+          localStorage.setItem('accessToken', data.accessToken);
+        } else {
+          errorBox.textContent = 'Не получен токен авторизации';
+          return;
+        }
+
+        // ✅ Переход на приложение
+        location.href = '/app';
+      } catch (err) {
+        errorBox.textContent = 'Сеть недоступна';
+      }
     });
-    if (r.ok) {
-      location.href = '/app';
-    } else {
-      const j = await r.json().catch(()=>({message:'Ошибка входа'}));
-      err.textContent = j.message || 'Ошибка входа';
-    }
-  } catch (_) {
-    err.textContent = 'Сеть недоступна';
-  }
-};
-</script>
+
+    usernameEl.focus();
+  </script>
 </body>
 </html>

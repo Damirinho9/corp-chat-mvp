@@ -1,41 +1,39 @@
-import { Body, Controller, Post, Res } from "@nestjs/common";
-import { AuthService } from "./auth.service";
-import { Response } from "express";
-import jwt from "jsonwebtoken";
+import { Body, Controller, Post, Res } from '@nestjs/common';
+import { Response } from 'express';
+import jwt from 'jsonwebtoken';
+import { AuthService } from './auth.service';
 
-@Controller("api/auth")
+@Controller('api/auth')
 export class AuthController {
-  constructor(private auth: AuthService) {}
+  constructor(private readonly auth: AuthService) {}
 
-  @Post("login")
+  @Post('login')
   async login(
     @Body() body: { username: string; password: string },
-    @Res({ passthrough: true }) res: Response
+    @Res({ passthrough: true }) res: Response,
   ) {
-    // Проверяем пользователя
     const user = await this.auth.validateUser(body.username, body.password);
 
-    // Генерируем пару токенов
     const { access, refresh } = this.auth.issueTokens({
       id: user.id,
       role: user.role,
     });
 
-    // Ставим httpOnly куки для SSR / Postman
-    res.cookie("access", access, {
+    // Куки — удобно для SSR/админки
+    res.cookie('access', access, {
       httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 15 * 60 * 1000, // 15 мин
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 15 * 60 * 1000,
     });
-    res.cookie("refresh", refresh, {
+    res.cookie('refresh', refresh, {
       httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 дней
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // ✅ Возвращаем токен и объект пользователя в формате, который ожидает фронт
+    // JSON — для SPA: фронт сохранит accessToken в localStorage
     return {
       accessToken: access,
       user: {
@@ -48,31 +46,32 @@ export class AuthController {
     };
   }
 
-  @Post("refresh")
-  async refresh(@Body() _: any, @Res({ passthrough: true }) res: Response) {
-    const refresh = (res.req as any).cookies["refresh"];
+  @Post('refresh')
+  async refresh(@Body() _dto: any, @Res({ passthrough: true }) res: Response) {
+    const refresh = (res.req as any).cookies?.['refresh'];
     const payload = jwt.verify(refresh, process.env.JWT_REFRESH_SECRET!) as any;
 
     const access = jwt.sign(
-      { sub: payload.sub },
+      { sub: payload.sub ?? payload.id },
       process.env.JWT_ACCESS_SECRET!,
-      { expiresIn: "15m" }
+      { expiresIn: '15m' },
     );
 
-    res.cookie("access", access, {
+    res.cookie('access', access, {
       httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
       maxAge: 15 * 60 * 1000,
     });
 
-    return { ok: true };
+    // Можно вернуть и сюда, если фронт так проще обновлять:
+    return { ok: true, accessToken: access };
   }
 
-  @Post("logout")
+  @Post('logout')
   async logout(@Res({ passthrough: true }) res: Response) {
-    res.clearCookie("access");
-    res.clearCookie("refresh");
+    res.clearCookie('access');
+    res.clearCookie('refresh');
     return { ok: true };
   }
 }
