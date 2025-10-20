@@ -17,41 +17,29 @@ export class ChatsController {
     return [];
   }
 
-  // ✅ Новый маршрут: создание/получение личного чата
+  // ✅ Исправленный метод: создаёт или возвращает DM по имени dm:<id1>-<id2>
   @Post('dm')
   async getOrCreateDm(@Req() req: any, @Body() body: { recipientId: number }) {
-    const userId = req.userId;
-    const recipientId = body.recipientId;
+    const userId = Number(req.userId);
+    const recipientId = Number(body.recipientId);
 
     if (!recipientId || recipientId === userId) {
       return { error: 'Некорректный recipientId' };
     }
 
-    // ищем существующий чат между этими двумя пользователями
+    // детерминированное имя чата
+    const [a, b] = [userId, recipientId].sort((x, y) => x - y);
+    const dmName = `dm:${a}-${b}`;
+
+    // ищем существующий
     let chat = await this.prisma.chat.findFirst({
-      where: {
-        isDirect: true,
-        participants: {
-          every: {
-            userId: { in: [userId, recipientId] },
-          },
-        },
-      },
+      where: { name: dmName },
     });
 
     // если нет — создаём
     if (!chat) {
       chat = await this.prisma.chat.create({
-        data: {
-          isDirect: true,
-          name: null,
-          participants: {
-            create: [
-              { userId },
-              { userId: recipientId },
-            ],
-          },
-        },
+        data: { name: dmName }, // поле name обязательно в схеме
       });
     }
 
