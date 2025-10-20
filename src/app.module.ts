@@ -3,7 +3,7 @@ import {
   NestModule,
   MiddlewareConsumer,
 } from '@nestjs/common';
-import * as cookieParser from 'cookie-parser';
+import cookieParser from 'cookie-parser';
 
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
