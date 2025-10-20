@@ -1,19 +1,61 @@
-// src/chats/chats.controller.ts
-import { Controller, Get, Req, Post, Body } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req } from '@nestjs/common';
 import { ChatsService } from './chats.service';
 import { MessagesService } from '../messages/messages.service';
+import { PrismaService } from '../common/prisma.service';
 
 @Controller('api/chats')
 export class ChatsController {
   constructor(
     private readonly chats: ChatsService,
     private readonly messages: MessagesService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Get()
   async list(@Req() req: any) {
-    // Если есть реализация: return this.chats.listForUser(req.userId);
-    return []; // временная заглушка, чтобы фронт не падал
+    // TODO: можно потом заменить на chats.listForUser(req.userId)
+    return [];
+  }
+
+  // ✅ Новый маршрут: создание/получение личного чата
+  @Post('dm')
+  async getOrCreateDm(@Req() req: any, @Body() body: { recipientId: number }) {
+    const userId = req.userId;
+    const recipientId = body.recipientId;
+
+    if (!recipientId || recipientId === userId) {
+      return { error: 'Некорректный recipientId' };
+    }
+
+    // ищем существующий чат между этими двумя пользователями
+    let chat = await this.prisma.chat.findFirst({
+      where: {
+        isDirect: true,
+        participants: {
+          every: {
+            userId: { in: [userId, recipientId] },
+          },
+        },
+      },
+    });
+
+    // если нет — создаём
+    if (!chat) {
+      chat = await this.prisma.chat.create({
+        data: {
+          isDirect: true,
+          name: null,
+          participants: {
+            create: [
+              { userId },
+              { userId: recipientId },
+            ],
+          },
+        },
+      });
+    }
+
+    return chat;
   }
 
   @Post('messages/chat')
