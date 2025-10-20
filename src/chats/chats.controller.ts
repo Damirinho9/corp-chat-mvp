@@ -17,7 +17,7 @@ export class ChatsController {
     return [];
   }
 
-  // ✅ Исправленный метод: создаёт или возвращает DM по имени dm:<id1>-<id2>
+  // ✅ исправленный метод для DM: обязательно указываем type: 'DM'
   @Post('dm')
   async getOrCreateDm(@Req() req: any, @Body() body: { recipientId: number }) {
     const userId = Number(req.userId);
@@ -31,15 +31,15 @@ export class ChatsController {
     const [a, b] = [userId, recipientId].sort((x, y) => x - y);
     const dmName = `dm:${a}-${b}`;
 
-    // ищем существующий
+    // 1) ищем уже созданный DM
     let chat = await this.prisma.chat.findFirst({
-      where: { name: dmName },
+      where: { name: dmName, type: 'DM' },
     });
 
-    // если нет — создаём
+    // 2) если нет — создаём (type обязателен в модели)
     if (!chat) {
       chat = await this.prisma.chat.create({
-        data: { name: dmName }, // поле name обязательно в схеме
+        data: { name: dmName, type: 'DM' },
       });
     }
 
