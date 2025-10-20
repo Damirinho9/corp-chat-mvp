@@ -1,5 +1,13 @@
+# Логи
 logs/
 !logs/.gitkeep
+
+# Игнорировать только корневую папку uploads (куда грузятся файлы)
 uploads/
 !uploads/.gitkeep
+
+# Но не игнорировать исходный код модуля в src/uploads
+!src/uploads/
+
+# Node modules
 node_modules/

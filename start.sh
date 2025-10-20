@@ -1,15 +1,30 @@
 #!/bin/sh
 set -e
 
-echo "Waiting for DATABASE_URL..."
-while [ -z "$DATABASE_URL" ]; do
-  echo "Still waiting..."
+echo "=== ENV VARS ==="
+env | grep -E "DATABASE|POSTGRES|PORT|NODE_ENV"
+echo "================"
+
+echo "\033[1;34m[init]\033[0m Waiting for DATABASE_URL..."
+for i in $(seq 1 30); do
+  if [ -n "$DATABASE_URL" ]; then
+    echo "\033[1;32m[ok]\033[0m DATABASE_URL found: $DATABASE_URL"
+    break
+  fi
+  echo "  Attempt $i/30: still waiting..."
   sleep 2
 done
 
-echo "DATABASE_URL=$DATABASE_URL"
+if [ -z "$DATABASE_URL" ]; then
+  echo "\033[1;31m[error]\033[0m DATABASE_URL not found after 60s, exiting."
+  exit 1
+fi
+
+echo "\033[1;34m[init]\033[0m Generating Prisma client..."
 npx prisma generate --schema=prisma/schema.postgres.prisma
+
+echo "\033[1;34m[init]\033[0m Applying database migrations..."
 npx prisma migrate deploy --schema=prisma/schema.postgres.prisma
 
-echo "Starting app..."
+echo "\033[1;32m[ok]\033[0m Database ready, starting application..."
 node dist/main.js
