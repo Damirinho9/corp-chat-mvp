@@ -1,12 +1,17 @@
-import { Body, Controller, Post, Res } from '@nestjs/common';
+import { Body, Controller, Post, Res, UnauthorizedException } from '@nestjs/common';
 import { Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { AuthService } from './auth.service';
+import { PrismaService } from '../common/prisma.service';
 
 @Controller('api/auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly prisma: PrismaService,
+  ) {}
 
+  // === LOGIN ===
   @Post('login')
   async login(
     @Body() body: { username: string; password: string },
@@ -19,7 +24,7 @@ export class AuthController {
       role: user.role,
     });
 
-    // Куки — удобно для SSR/админки
+    // Куки — для SSR/админки
     res.cookie('access', access, {
       httpOnly: true,
       sameSite: 'lax',
@@ -46,17 +51,33 @@ export class AuthController {
     };
   }
 
+  // === REFRESH ===
   @Post('refresh')
-  async refresh(@Body() _dto: any, @Res({ passthrough: true }) res: Response) {
+  async refresh(@Body() _: any, @Res({ passthrough: true }) res: Response) {
     const refresh = (res.req as any).cookies?.['refresh'];
-    const payload = jwt.verify(refresh, process.env.JWT_REFRESH_SECRET!) as any;
+    if (!refresh) throw new UnauthorizedException('no_refresh_token');
+
+    let payload: any;
+    try {
+      payload = jwt.verify(refresh, process.env.JWT_REFRESH_SECRET!);
+    } catch (e) {
+      throw new UnauthorizedException('invalid_refresh');
+    }
+
+    // 🔹 Получаем роль из базы, чтобы она всегда была актуальной
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub ?? payload.id },
+      select: { id: true, role: true },
+    });
+    if (!user) throw new UnauthorizedException('user_not_found');
 
     const access = jwt.sign(
-      { sub: payload.sub ?? payload.id },
+      { sub: user.id, role: user.role },
       process.env.JWT_ACCESS_SECRET!,
       { expiresIn: '15m' },
     );
 
+    // Ставим новый access-cookie
     res.cookie('access', access, {
       httpOnly: true,
       sameSite: 'lax',
@@ -64,10 +85,11 @@ export class AuthController {
       maxAge: 15 * 60 * 1000,
     });
 
-    // Можно вернуть и сюда, если фронт так проще обновлять:
+    // Можно вернуть токен фронту (для localStorage)
     return { ok: true, accessToken: access };
   }
 
+  // === LOGOUT ===
   @Post('logout')
   async logout(@Res({ passthrough: true }) res: Response) {
     res.clearCookie('access');

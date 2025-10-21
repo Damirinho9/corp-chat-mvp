@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Post, Req, Param, Query, UseGuards } from '@nestjs/common';
+import { 
+  Body, 
+  Controller, 
+  Get, 
+  Post, 
+  Req, 
+  Param, 
+  Query, 
+  UseGuards, 
+  ForbiddenException 
+} from '@nestjs/common';
 import { ChatsService } from './chats.service';
 import { MessagesService } from '../messages/messages.service';
 import { PrismaService } from '../common/prisma.service';
@@ -13,11 +23,13 @@ export class ChatsController {
     private readonly prisma: PrismaService,
   ) {}
 
+  // === Список чатов пользователя ===
   @Get()
   async list(@Req() req: any) {
     return this.chats.listForUser(req.userId);
   }
 
+  // === Сообщения конкретного чата ===
   @Get(':id/messages')
   async getMessages(
     @Req() req: any,
@@ -27,17 +39,18 @@ export class ChatsController {
     const chatId = Number(id);
     const take = Math.min(Math.max(Number(limit) || 50, 1), 200);
 
-    // Проверка членства или роли ADMIN
+    // Проверяем: либо участник, либо админ
     const member = await this.prisma.chatMember.findFirst({
       where: { chatId, userId: req.userId },
     });
-    const user = await this.prisma.user.findUnique({ 
+    const user = await this.prisma.user.findUnique({
       where: { id: req.userId },
-      select: { role: true }
+      select: { role: true },
     });
-    
+
     if (!member && user?.role !== 'ADMIN') {
-      return { error: 'Доступ запрещен' };
+      // 💥 Возвращаем 403, чтобы фронт корректно отработал
+      throw new ForbiddenException('forbidden');
     }
 
     const rows = await this.prisma.message.findMany({
@@ -49,6 +62,7 @@ export class ChatsController {
       },
     });
 
+    // Преобразуем под формат фронта
     return rows.map((m) => ({
       id: m.id,
       chatId: m.chatId,
@@ -59,18 +73,20 @@ export class ChatsController {
     }));
   }
 
+  // === Получить или создать личный чат (DM) ===
   @Post('dm')
   async getOrCreateDm(@Req() req: any, @Body() body: { recipientId: number }) {
     const userId = Number(req.userId);
     const recipientId = Number(body.recipientId);
 
     if (!recipientId || recipientId === userId) {
-      return { error: 'Некорректный recipientId' };
+      throw new ForbiddenException('invalid_recipient');
     }
 
     return this.chats.getOrCreateDm(userId, recipientId);
   }
 
+  // === Отправить сообщение в чат ===
   @Post('messages/chat')
   async sendToChat(
     @Req() req: any,
@@ -84,6 +100,7 @@ export class ChatsController {
     );
   }
 
+  // === Отправить личное сообщение (DM) ===
   @Post('messages/dm')
   async sendDm(
     @Req() req: any,
