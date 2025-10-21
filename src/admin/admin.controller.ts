@@ -150,7 +150,7 @@ export class AdminController {
       data.displayName = body.displayName;
     if (typeof body.role === "string") data.role = body.role as any;
 
-    // departmentId → nested department
+    // departmentId → nested department connect/disconnect
     if (Object.prototype.hasOwnProperty.call(body, "departmentId")) {
       data.department =
         body.departmentId == null
@@ -158,12 +158,20 @@ export class AdminController {
           : { connect: { id: Number(body.departmentId) } };
     }
 
-    // managerId → nested manager (если есть такая связь)
+    // managerId — СКАЛЯРНОЕ поле (а не nested relation)
     if (Object.prototype.hasOwnProperty.call(body, "managerId")) {
-      data.manager =
-        body.managerId == null
-          ? { disconnect: true }
-          : { connect: { id: Number(body.managerId) } };
+      if (body.managerId != null) {
+        const mgrId = Number(body.managerId);
+        if (Number.isNaN(mgrId)) throw new ForbiddenException("bad_managerId");
+        const mgr = await this.prisma.user.findUnique({
+          where: { id: mgrId },
+          select: { id: true },
+        });
+        if (!mgr) throw new ForbiddenException("manager_not_found");
+        (data as any).managerId = mgrId;
+      } else {
+        (data as any).managerId = null;
+      }
     }
 
     const updated = await this.prisma.user.update({
@@ -184,7 +192,7 @@ export class AdminController {
     return updated;
   }
 
-  /** Быстрая синхронизация (оставил для обратной совместимости) */
+  /** Быстрая синхронизация (на всякий случай оставлена) */
   private async syncUserSystemGroups(user: any) {
     const leadership = await this.prisma.chat.findUnique({
       where: { systemKey: "leadership" },
@@ -282,9 +290,9 @@ export class AdminController {
     if (body.departmentId != null) {
       data.department = { connect: { id: Number(body.departmentId) } };
     }
+    // managerId — скаляр на create тоже
     if (body.managerId != null) {
-      // если есть связь manager -> User
-      (data as any).manager = { connect: { id: Number(body.managerId) } };
+      (data as any).managerId = Number(body.managerId);
     }
 
     const user = await this.prisma.user.create({ data });
