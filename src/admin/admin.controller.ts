@@ -6,21 +6,30 @@ import { Prisma } from "@prisma/client"; // добавь в начало фай�
 @Controller("api/admin")
 @UseGuards(AuthGuard)
 export class AdminController {
-  @Post("users/:id") // используем POST как "PATCH" из простой формы админки
+  @Post("users/:id")
   async updateUser(
     @Req() req: any,
-    @Body() body: { displayName?: string; role?: string; departmentId?: number | null },
-    @Query("id") idQ?: any, // поддержка admin.html, который дергает ?id=
+    @Body() body: { 
+      displayName?: string; 
+      role?: string; 
+      departmentId?: number | null;
+      managerId?: number | null;  // ← добавлено
+    },
+    @Query("id") idQ?: any,
   ) {
     await this.assertAdmin(req);
     const id = Number(idQ ?? (req.params?.id));
-    const before = await this.prisma.user.findUnique({ where: { id }, select: { role: true, departmentId: true } });
+    const before = await this.prisma.user.findUnique({ 
+      where: { id }, 
+      select: { role: true, departmentId: true } 
+    });
     if (!before) throw new ForbiddenException("user_not_found");
 
     const data: any = {};
     if (typeof body.displayName === "string") data.displayName = body.displayName;
     if (typeof body.role === "string") data.role = body.role;
     if (body.hasOwnProperty("departmentId")) data.departmentId = body.departmentId ?? null;
+    if (body.hasOwnProperty("managerId")) data.managerId = body.managerId ?? null;  // ← добавлено
 
     const updated = await this.prisma.user.update({ where: { id }, data });
 
