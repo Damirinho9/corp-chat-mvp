@@ -15,6 +15,7 @@ export class ChatsService {
     });
   }
 
+  /** Создаёт или возвращает существующий DM-чат для пары пользователей */
   async getOrCreateDm(senderId: number, recipientId: number) {
     const [sender, recipient] = await Promise.all([
       this.prisma.user.findUnique({ where: { id: senderId } }),
@@ -24,26 +25,52 @@ export class ChatsService {
 
     const decision = this.rbac.checkDmPermission(sender, recipient);
     await this.prisma.auditLog.create({
-      data: { actorId: senderId, action: "SEND_DM_ATTEMPT", targetId: recipientId, resource: "DM", outcome: decision.allow ? "ALLOW" : "DENY", reason: decision.reason || null }
-    });
-    if (!decision.allow) throw new ForbiddenException(decision.reason || "dm_forbidden");
-
-    const existing = await this.prisma.chat.findFirst({
-      where: { type: 'DM', AND: [ { members: { some: { userId: senderId } } }, { members: { some: { userId: recipientId } } } ] },
-      include: { members: true },
-    });
-    if (existing) return existing;
-    const created = await this.prisma.chat.create({
       data: {
-        type: 'DM',
-        name: `dm_${senderId}_${recipientId}`,
-        members: { create: [{ userId: senderId }, { userId: recipientId }] },
+        actorId: senderId,
+        action: "SEND_DM_ATTEMPT",
+        targetId: recipientId,
+        resource: "DM",
+        outcome: decision.allow ? "ALLOW" : "DENY",
+        reason: decision.reason || null,
       },
-      include: { members: true },
     });
-    // уведомить участников о новом DM чате
-    pushTo(senderId, { type: "chat_created", chatId: created.id });
-    pushTo(recipientId, { type: "chat_created", chatId: created.id });
-    return created;
+    if (!decision.allow)
+      throw new ForbiddenException(decision.reason || "dm_forbidden");
+
+    // 🔹 гарантированный уникальный ключ для пары
+    const [u1, u2] = senderId < recipientId ? [senderId, recipientId] : [recipientId, senderId];
+    const key = `dm:${u1}-${u2}`;
+
+    // 🔹 upsert чата по systemKey
+    const chat = await this.prisma.chat.upsert({
+      where: { systemKey: key },
+      update: {},
+      create: {
+        type: "DM",
+        name: `ЛС ${u1}-${u2}`,
+        systemKey: key,
+      },
+    });
+
+    // 🔹 гарантируем членство обоих пользователей
+    await this.prisma.chatMember.upsert({
+      where: { chatId_userId: { chatId: chat.id, userId: u1 } },
+      update: {},
+      create: { chatId: chat.id, userId: u1 },
+    });
+    await this.prisma.chatMember.upsert({
+      where: { chatId_userId: { chatId: chat.id, userId: u2 } },
+      update: {},
+      create: { chatId: chat.id, userId: u2 },
+    });
+
+    // 🔹 уведомляем участников о новом чате
+    pushTo(senderId, { type: "chat_created", chatId: chat.id });
+    pushTo(recipientId, { type: "chat_created", chatId: chat.id });
+
+    return this.prisma.chat.findUnique({
+      where: { id: chat.id },
+      include: { members: { include: { user: true } } },
+    });
   }
 }

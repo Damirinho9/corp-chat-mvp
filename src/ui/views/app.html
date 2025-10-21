@@ -86,13 +86,25 @@ async function fetchMe(){
   }
 }
 
-async function loadChats(){
-  const r=await authFetch('/api/chats');
-  if(!r.ok) return console.error('Не удалось загрузить чаты',r.status);
-  const data=await r.json();
-  const ul=document.getElementById('chats');
-  ul.innerHTML=(Array.isArray(data)?data:[]).map(c=>`<li><button class="chat-btn" data-id="${c.id}">${escapeHtml(c.name||'Чат '+c.id)}</button></li>`).join('');
-  ul.querySelectorAll('button').forEach(b=>b.onclick=()=>openChat(+b.dataset.id,b.textContent));
+async function loadChats() {
+  const r = await authFetch('/api/chats');
+  if (!r.ok) return console.error('Не удалось загрузить чаты', r.status);
+  const data = await r.json();
+  const ul = document.getElementById('chats');
+
+  ul.innerHTML = (Array.isArray(data) ? data : [])
+    .map(c => {
+      // 🔹 если это DM — показываем "Личные сообщения"
+      const label = /^dm[:_]/i.test(c.name || '')
+        ? 'Личные сообщения'
+        : (c.name || ('Чат ' + c.id));
+      return `<li><button class="chat-btn" data-id="${c.id}">${escapeHtml(label)}</button></li>`;
+    })
+    .join('');
+
+  ul.querySelectorAll('button').forEach(b =>
+    b.onclick = () => openChat(+b.dataset.id, b.textContent)
+  );
 }
 
 async function fetchMessages(chatId){
@@ -127,11 +139,12 @@ async function openDm(recipientId,title){
 }
 
 function render(msgs){
-  const box=document.getElementById('messages');
-  const frag=document.createDocumentFragment();
-  (msgs||[]).forEach(m=>frag.appendChild(renderMsgEl(m)));
+  const box = document.getElementById('messages');
+  box.innerHTML = '';                      // ← очищаем перед отрисовкой
+  const frag = document.createDocumentFragment();
+  (msgs || []).forEach(m => frag.appendChild(renderMsgEl(m)));
   box.appendChild(frag);
-  box.scrollTop=box.scrollHeight;
+  box.scrollTop = box.scrollHeight;
 }
 
 function renderMsgEl(m){
@@ -214,12 +227,21 @@ function renderPresenceBadges(){
   }
 }
 
-function connectSSE(){
+let es; // ← ВАЖНО: объявляем до connectSSE, вне функции!
+
+function connectSSE() {
   const token = localStorage.getItem('accessToken');
   const url = token
     ? `/api/events?access_token=${encodeURIComponent(token)}`
     : '/api/events';
-  const es = new EventSource(url);
+
+  if (es) {                 // ← при повторных вызовах
+    try { es.close(); }     // закрываем старый поток
+    catch {}
+  }
+
+  es = new EventSource(url);
+
   es.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
@@ -230,6 +252,7 @@ function connectSSE(){
       }
     } catch {}
   };
+
   es.onerror = () => console.log('SSE reconnect...');
 }
 
