@@ -31,12 +31,12 @@ if npx prisma migrate deploy --schema=prisma/schema.postgres.prisma; then
   echo "\033[1;32m[ok]\033[0m Migrations applied successfully."
 else
   echo "\033[1;33m[warn]\033[0m migrate deploy failed — trying db push..."
-  npx prisma db push --schema=prisma/schema.postgres.prisma
+  npx prisma db push --schema=prisma/schema.postgres.prisma --skip-generate
 fi
 
-# 4️⃣ Сид базы
+# 4️⃣ Сид базы (ИСПРАВЛЕНО: прямой вызов seed.cjs)
 echo "\033[1;34m[init]\033[0m Running database seed..."
-if npx prisma db seed; then
+if node scripts/seed.cjs; then
   echo "\033[1;32m[ok]\033[0m Seed completed."
 else
   echo "\033[1;33m[warn]\033[0m Seed failed or already applied."
@@ -53,4 +53,4 @@ fi
 
 # 6️⃣ Старт приложения
 echo "\033[1;32m[ok]\033[0m Database ready, starting application..."
-node dist/main.js
+exec node dist/main.js
