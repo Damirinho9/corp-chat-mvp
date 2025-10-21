@@ -27,12 +27,22 @@ npx prisma generate --schema=prisma/schema.postgres.prisma
 
 # 3️⃣ Миграции с fallback
 echo "\033[1;34m[init]\033[0m Applying database migrations..."
-if ! npx prisma migrate deploy --schema=prisma/schema.postgres.prisma; then
+if npx prisma migrate deploy --schema=prisma/schema.postgres.prisma; then
+  echo "\033[1;32m[ok]\033[0m Migrations applied successfully."
+else
   echo "\033[1;33m[warn]\033[0m migrate deploy failed — trying db push..."
   npx prisma db push --schema=prisma/schema.postgres.prisma
 fi
 
-# 4️⃣ Копируем UI-шаблоны, если они есть
+# 4️⃣ Сид базы
+echo "\033[1;34m[init]\033[0m Running database seed..."
+if npx prisma db seed; then
+  echo "\033[1;32m[ok]\033[0m Seed completed."
+else
+  echo "\033[1;33m[warn]\033[0m Seed failed or already applied."
+fi
+
+# 5️⃣ Копируем UI-шаблоны, если они есть
 if [ -d "src/ui/views" ]; then
   echo "\033[1;34m[init]\033[0m Copying UI templates..."
   mkdir -p dist/src/ui/views
@@ -41,6 +51,6 @@ else
   echo "\033[1;33m[warn]\033[0m No src/ui/views found, skipping copy."
 fi
 
-# 5️⃣ Старт приложения
+# 6️⃣ Старт приложения
 echo "\033[1;32m[ok]\033[0m Database ready, starting application..."
 node dist/main.js
