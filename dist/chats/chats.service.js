@@ -35,27 +35,44 @@ let ChatsService = class ChatsService {
             throw new common_1.ForbiddenException("unknown_user");
         const decision = this.rbac.checkDmPermission(sender, recipient);
         await this.prisma.auditLog.create({
-            data: { actorId: senderId, action: "SEND_DM_ATTEMPT", targetId: recipientId, resource: "DM", outcome: decision.allow ? "ALLOW" : "DENY", reason: decision.reason || null }
+            data: {
+                actorId: senderId,
+                action: "SEND_DM_ATTEMPT",
+                targetId: recipientId,
+                resource: "DM",
+                outcome: decision.allow ? "ALLOW" : "DENY",
+                reason: decision.reason || null,
+            },
         });
         if (!decision.allow)
             throw new common_1.ForbiddenException(decision.reason || "dm_forbidden");
-        const existing = await this.prisma.chat.findFirst({
-            where: { type: 'DM', AND: [{ members: { some: { userId: senderId } } }, { members: { some: { userId: recipientId } } }] },
-            include: { members: true },
-        });
-        if (existing)
-            return existing;
-        const created = await this.prisma.chat.create({
-            data: {
-                type: 'DM',
-                name: `dm_${senderId}_${recipientId}`,
-                members: { create: [{ userId: senderId }, { userId: recipientId }] },
+        const [u1, u2] = senderId < recipientId ? [senderId, recipientId] : [recipientId, senderId];
+        const key = `dm:${u1}-${u2}`;
+        const chat = await this.prisma.chat.upsert({
+            where: { systemKey: key },
+            update: {},
+            create: {
+                type: "DM",
+                name: `ЛС ${u1}-${u2}`,
+                systemKey: key,
             },
-            include: { members: true },
         });
-        (0, sse_gateway_1.pushTo)(senderId, { type: "chat_created", chatId: created.id });
-        (0, sse_gateway_1.pushTo)(recipientId, { type: "chat_created", chatId: created.id });
-        return created;
+        await this.prisma.chatMember.upsert({
+            where: { chatId_userId: { chatId: chat.id, userId: u1 } },
+            update: {},
+            create: { chatId: chat.id, userId: u1 },
+        });
+        await this.prisma.chatMember.upsert({
+            where: { chatId_userId: { chatId: chat.id, userId: u2 } },
+            update: {},
+            create: { chatId: chat.id, userId: u2 },
+        });
+        (0, sse_gateway_1.pushTo)(senderId, { type: "chat_created", chatId: chat.id });
+        (0, sse_gateway_1.pushTo)(recipientId, { type: "chat_created", chatId: chat.id });
+        return this.prisma.chat.findUnique({
+            where: { id: chat.id },
+            include: { members: { include: { user: true } } },
+        });
     }
 };
 exports.ChatsService = ChatsService;

@@ -17,47 +17,47 @@ const common_1 = require("@nestjs/common");
 const path_1 = require("path");
 let UiController = class UiController {
     constructor() {
-        this.viewsRoot = (0, path_1.join)(__dirname, "views");
+        this.viewsRoot = (0, path_1.join)(__dirname, 'views');
     }
     login(res) {
-        res.sendFile("login.html", { root: this.viewsRoot });
+        res.sendFile('login.html', { root: this.viewsRoot });
     }
     app(res) {
-        res.sendFile("app.html", { root: this.viewsRoot });
+        res.sendFile('app.html', { root: this.viewsRoot });
     }
     admin(res) {
-        res.sendFile("admin.html", { root: this.viewsRoot });
+        res.sendFile('admin.html', { root: this.viewsRoot });
     }
     css(res) {
         res
-            .type("text/css")
-            .send("body{font-family:sans-serif} .app{display:flex;gap:16px} aside{width:280px}");
+            .type('text/css')
+            .send('body{font-family:sans-serif} .app{display:flex;gap:16px} aside{width:280px}');
     }
 };
 exports.UiController = UiController;
 __decorate([
-    (0, common_1.Get)(["/", "/login"]),
+    (0, common_1.Get)(['/', '/login']),
     __param(0, (0, common_1.Res)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
 ], UiController.prototype, "login", null);
 __decorate([
-    (0, common_1.Get)("/app"),
+    (0, common_1.Get)('/app'),
     __param(0, (0, common_1.Res)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
 ], UiController.prototype, "app", null);
 __decorate([
-    (0, common_1.Get)("/admin"),
+    (0, common_1.Get)('/admin'),
     __param(0, (0, common_1.Res)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
 ], UiController.prototype, "admin", null);
 __decorate([
-    (0, common_1.Get)("/static/styles.css"),
+    (0, common_1.Get)('/static/styles.css'),
     __param(0, (0, common_1.Res)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),

@@ -15,16 +15,26 @@ const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 let AuthGuard = class AuthGuard {
     canActivate(ctx) {
         const req = ctx.switchToHttp().getRequest();
-        const token = req.cookies?.access;
+        let token = null;
+        const authHeader = req.headers['authorization'];
+        if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+            token = authHeader.slice(7);
+        }
+        if (!token && req.cookies?.access) {
+            token = req.cookies.access;
+        }
+        if (!token && typeof req.query?.access_token === 'string') {
+            token = req.query.access_token;
+        }
         if (!token)
             throw new common_1.UnauthorizedException("no_token");
         try {
             const payload = jsonwebtoken_1.default.verify(token, process.env.JWT_ACCESS_SECRET);
-            req.userId = payload.sub;
+            req.userId = payload.sub ?? payload.id;
             req.userRole = payload.role;
             return true;
         }
-        catch {
+        catch (err) {
             throw new common_1.UnauthorizedException("invalid_token");
         }
     }

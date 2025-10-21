@@ -50,22 +50,22 @@ const common_1 = require("@nestjs/common");
 const auth_guard_1 = require("../common/auth.guard");
 const prisma_service_1 = require("../common/prisma.service");
 let AdminController = class AdminController {
-    async updateUser(req, body, idQ) {
-        await this.assertAdmin(req);
-        const id = Number(idQ ?? (req.params?.id));
-        const before = await this.prisma.user.findUnique({ where: { id }, select: { role: true, departmentId: true } });
-        if (!before)
-            throw new common_1.ForbiddenException("user_not_found");
-        const data = {};
-        if (typeof body.displayName === "string")
-            data.displayName = body.displayName;
-        if (typeof body.role === "string")
-            data.role = body.role;
-        if (body.hasOwnProperty("departmentId"))
-            data.departmentId = body.departmentId ?? null;
-        const updated = await this.prisma.user.update({ where: { id }, data });
-        await this.syncUserSystemGroupsFull({ id: updated.id, role: updated.role, departmentId: updated.departmentId ?? null }, { role: before.role, departmentId: before.departmentId ?? null });
-        return updated;
+    constructor(prisma) {
+        this.prisma = prisma;
+    }
+    async assertAdmin(req) {
+        const me = await this.prisma.user.findUnique({ where: { id: req.userId } });
+        if (me?.role !== "ADMIN")
+            throw new common_1.ForbiddenException("admin_only");
+    }
+    async ensureMember(chatId, userId) {
+        if (!chatId)
+            return;
+        const exists = await this.prisma.chatMember.findFirst({
+            where: { chatId, userId },
+        });
+        if (!exists)
+            await this.prisma.chatMember.create({ data: { chatId, userId } });
     }
     async getOrCreateDeptChatId(deptId) {
         if (!deptId)
@@ -73,16 +73,27 @@ let AdminController = class AdminController {
         const key = `dept_${deptId}`;
         let chat = await this.prisma.chat.findUnique({ where: { systemKey: key } });
         if (!chat) {
-            const dept = await this.prisma.department.findUnique({ where: { id: deptId } });
+            const dept = await this.prisma.department.findUnique({
+                where: { id: deptId },
+            });
             chat = await this.prisma.chat.create({
-                data: { type: "GROUP", name: `Отдел ${dept?.name || deptId}`, departmentId: deptId, systemKey: key },
+                data: {
+                    type: "GROUP",
+                    name: `Отдел ${dept?.name || deptId}`,
+                    departmentId: deptId,
+                    systemKey: key,
+                },
             });
         }
         return chat.id;
     }
     async syncUserSystemGroupsFull(user, before) {
-        const leadership = await this.prisma.chat.findUnique({ where: { systemKey: "leadership" } });
-        const leadership_heads = await this.prisma.chat.findUnique({ where: { systemKey: "leadership_heads" } });
+        const leadership = await this.prisma.chat.findUnique({
+            where: { systemKey: "leadership" },
+        });
+        const leadership_heads = await this.prisma.chat.findUnique({
+            where: { systemKey: "leadership_heads" },
+        });
         const newDeptChatId = await this.getOrCreateDeptChatId(user.departmentId ?? null);
         const oldDeptChatId = await this.getOrCreateDeptChatId(before?.departmentId ?? null);
         const should = new Set();
@@ -98,7 +109,12 @@ let AdminController = class AdminController {
         }
         if (newDeptChatId)
             should.add(newDeptChatId);
-        const systemChatIds = [leadership?.id, leadership_heads?.id, newDeptChatId, oldDeptChatId].filter(Boolean);
+        const systemChatIds = [
+            leadership?.id,
+            leadership_heads?.id,
+            newDeptChatId,
+            oldDeptChatId,
+        ].filter(Boolean);
         if (systemChatIds.length === 0)
             return;
         const current = await this.prisma.chatMember.findMany({
@@ -106,42 +122,90 @@ let AdminController = class AdminController {
             select: { chatId: true },
         });
         const currentSet = new Set(current.map((m) => m.chatId));
-        const toAdd = Array.from(should).filter(id => !currentSet.has(id));
-        const toRemove = Array.from(currentSet).filter(id => !should.has(id));
+        const toAdd = Array.from(should).filter((id) => !currentSet.has(id));
+        const toRemove = Array.from(currentSet).filter((id) => !should.has(id));
         await this.prisma.$transaction(async (tx) => {
             for (const id of toAdd) {
                 await tx.chatMember.create({ data: { chatId: id, userId: user.id } });
             }
             for (const id of toRemove) {
-                await tx.chatMember.deleteMany({ where: { chatId: id, userId: user.id } });
+                await tx.chatMember.deleteMany({
+                    where: { chatId: id, userId: user.id },
+                });
             }
         });
     }
-    constructor(prisma) {
-        this.prisma = prisma;
-    }
-    async assertAdmin(req) {
-        const me = await this.prisma.user.findUnique({ where: { id: req.userId } });
-        if (me?.role !== "ADMIN")
-            throw new common_1.ForbiddenException("admin_only");
-    }
-    async ensureMember(chatId, userId) {
-        if (!chatId)
-            return;
-        const exists = await this.prisma.chatMember.findFirst({ where: { chatId, userId } });
-        if (!exists)
-            await this.prisma.chatMember.create({ data: { chatId, userId } });
+    async updateUser(req, idParam, body) {
+        await this.assertAdmin(req);
+        const id = Number(idParam);
+        if (Number.isNaN(id))
+            throw new common_1.ForbiddenException("bad_id");
+        if (Object.prototype.hasOwnProperty.call(body, "managerId") &&
+            body.managerId === id) {
+            throw new common_1.ForbiddenException("manager_cannot_be_self");
+        }
+        const before = await this.prisma.user.findUnique({
+            where: { id },
+            select: { role: true, departmentId: true },
+        });
+        if (!before)
+            throw new common_1.ForbiddenException("user_not_found");
+        const data = {};
+        if (typeof body.displayName === "string")
+            data.displayName = body.displayName;
+        if (typeof body.role === "string")
+            data.role = body.role;
+        if (Object.prototype.hasOwnProperty.call(body, "departmentId")) {
+            data.department =
+                body.departmentId == null
+                    ? { disconnect: true }
+                    : { connect: { id: Number(body.departmentId) } };
+        }
+        if (Object.prototype.hasOwnProperty.call(body, "managerId")) {
+            if (body.managerId != null) {
+                const mgrId = Number(body.managerId);
+                if (Number.isNaN(mgrId))
+                    throw new common_1.ForbiddenException("bad_managerId");
+                const mgr = await this.prisma.user.findUnique({
+                    where: { id: mgrId },
+                    select: { id: true },
+                });
+                if (!mgr)
+                    throw new common_1.ForbiddenException("manager_not_found");
+                data.managerId = mgrId;
+            }
+            else {
+                data.managerId = null;
+            }
+        }
+        const updated = await this.prisma.user.update({
+            where: { id },
+            data,
+            select: { id: true, role: true, departmentId: true },
+        });
+        await this.syncUserSystemGroupsFull({
+            id: updated.id,
+            role: updated.role,
+            departmentId: updated.departmentId ?? null,
+        }, { role: before.role, departmentId: before.departmentId ?? null });
+        return updated;
     }
     async syncUserSystemGroups(user) {
-        const leadership = await this.prisma.chat.findUnique({ where: { systemKey: 'leadership' } });
-        const leadership_heads = await this.prisma.chat.findUnique({ where: { systemKey: 'leadership_heads' } });
+        const leadership = await this.prisma.chat.findUnique({
+            where: { systemKey: "leadership" },
+        });
+        const leadership_heads = await this.prisma.chat.findUnique({
+            where: { systemKey: "leadership_heads" },
+        });
         const deptKey = user.departmentId ? `dept_${user.departmentId}` : null;
-        const dept = deptKey ? await this.prisma.chat.findUnique({ where: { systemKey: deptKey } }) : null;
-        if (user.role === 'ADMIN') {
+        const dept = deptKey
+            ? await this.prisma.chat.findUnique({ where: { systemKey: deptKey } })
+            : null;
+        if (user.role === "ADMIN") {
             await this.ensureMember(leadership?.id ?? null, user.id);
             await this.ensureMember(leadership_heads?.id ?? null, user.id);
         }
-        else if (user.role === 'HEAD') {
+        else if (user.role === "HEAD") {
             await this.ensureMember(leadership_heads?.id ?? null, user.id);
         }
         if (dept)
@@ -155,44 +219,56 @@ let AdminController = class AdminController {
                 type: "DM",
                 AND: [
                     { members: { some: { userId: aId } } },
-                    { members: { some: { userId: bId } } }
-                ]
+                    { members: { some: { userId: bId } } },
+                ],
             },
-            include: { members: true }
+            include: { members: true },
         });
         if (!chat)
             return [];
         return this.prisma.message.findMany({
             where: { chatId: chat.id },
-            orderBy: { createdAt: "asc" }
+            orderBy: { createdAt: "asc" },
         });
     }
     async audit(req) {
         await this.assertAdmin(req);
         return this.prisma.auditLog.findMany({
             orderBy: { createdAt: "desc" },
-            take: 100
+            take: 100,
         });
     }
     async createUser(req, body) {
         await this.assertAdmin(req);
-        const pwd = body.password || '';
+        const pwd = body.password || "";
         const tooShort = pwd.length < 8;
-        const sameAsUser = pwd.toLowerCase() == (body.username || '').toLowerCase();
+        const sameAsUser = pwd.toLowerCase() === (body.username || "").toLowerCase();
         const weak = !(/[a-zA-Z]/.test(pwd) && /\d/.test(pwd));
         if (tooShort || sameAsUser || weak) {
-            throw new common_1.ForbiddenException('passwordTooWeak');
+            throw new common_1.ForbiddenException("passwordTooWeak");
         }
         const bcrypt = await Promise.resolve().then(() => __importStar(require("bcrypt")));
         const hash = await bcrypt.hash(body.password, Number(process.env.PASSWORD_SALT_ROUNDS || 10));
-        const user = await this.prisma.user.create({ data: { username: body.username, displayName: body.displayName, role: body.role, departmentId: body.departmentId || null, passwordHash: hash } });
+        const data = {
+            username: body.username,
+            displayName: body.displayName,
+            role: body.role,
+            passwordHash: hash,
+        };
+        if (body.departmentId != null) {
+            data.department = { connect: { id: Number(body.departmentId) } };
+        }
+        if (body.managerId != null) {
+            data.managerId = Number(body.managerId);
+        }
+        const user = await this.prisma.user.create({ data });
         await this.syncUserSystemGroups(user);
         return user;
     }
     async listUsers(req) {
         await this.assertAdmin(req);
         return this.prisma.user.findMany({
-            orderBy: { id: 'asc' },
+            orderBy: { id: "asc" },
             select: {
                 id: true,
                 username: true,
@@ -203,8 +279,8 @@ let AdminController = class AdminController {
         });
     }
     async yourMethod(body) {
-        const pwd = body.password || '';
-        const sameAsUser = pwd.toLowerCase() === (body.username || '').toLowerCase();
+        const pwd = body.password || "";
+        const sameAsUser = pwd.toLowerCase() === (body.username || "").toLowerCase();
         return { sameAsUser };
     }
 };
@@ -212,10 +288,10 @@ exports.AdminController = AdminController;
 __decorate([
     (0, common_1.Post)("users/:id"),
     __param(0, (0, common_1.Req)()),
-    __param(1, (0, common_1.Body)()),
-    __param(2, (0, common_1.Query)("id")),
+    __param(1, (0, common_1.Param)("id")),
+    __param(2, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, Object, Object]),
+    __metadata("design:paramtypes", [Object, String, Object]),
     __metadata("design:returntype", Promise)
 ], AdminController.prototype, "updateUser", null);
 __decorate([

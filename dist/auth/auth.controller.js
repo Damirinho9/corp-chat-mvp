@@ -17,35 +17,78 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthController = void 0;
 const common_1 = require("@nestjs/common");
-const auth_service_1 = require("./auth.service");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const auth_service_1 = require("./auth.service");
+const prisma_service_1 = require("../common/prisma.service");
 let AuthController = class AuthController {
-    constructor(auth) {
+    constructor(auth, prisma) {
         this.auth = auth;
+        this.prisma = prisma;
     }
     async login(body, res) {
         const user = await this.auth.validateUser(body.username, body.password);
-        const { access, refresh } = this.auth.issueTokens({ id: user.id, role: user.role });
-        res.cookie("access", access, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 15 * 60 * 1000 });
-        res.cookie("refresh", refresh, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 7 * 24 * 60 * 60 * 1000 });
-        return { id: user.id, username: user.username, displayName: user.displayName, role: user.role, departmentId: user.departmentId };
+        const { access, refresh } = this.auth.issueTokens({
+            id: user.id,
+            role: user.role,
+        });
+        res.cookie('access', access, {
+            httpOnly: true,
+            sameSite: 'lax',
+            secure: process.env.NODE_ENV === 'production',
+            maxAge: 15 * 60 * 1000,
+        });
+        res.cookie('refresh', refresh, {
+            httpOnly: true,
+            sameSite: 'lax',
+            secure: process.env.NODE_ENV === 'production',
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+        });
+        return {
+            accessToken: access,
+            user: {
+                id: user.id,
+                username: user.username,
+                displayName: user.displayName,
+                role: user.role,
+                departmentId: user.departmentId,
+            },
+        };
     }
     async refresh(_, res) {
-        const refresh = res.req.cookies["refresh"];
-        const payload = jsonwebtoken_1.default.verify(refresh, process.env.JWT_REFRESH_SECRET);
-        const access = jsonwebtoken_1.default.sign({ sub: payload.sub }, process.env.JWT_ACCESS_SECRET, { expiresIn: "15m" });
-        res.cookie("access", access, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 15 * 60 * 1000 });
-        return { ok: true };
+        const refresh = res.req.cookies?.['refresh'];
+        if (!refresh)
+            throw new common_1.UnauthorizedException('no_refresh_token');
+        let payload;
+        try {
+            payload = jsonwebtoken_1.default.verify(refresh, process.env.JWT_REFRESH_SECRET);
+        }
+        catch (e) {
+            throw new common_1.UnauthorizedException('invalid_refresh');
+        }
+        const user = await this.prisma.user.findUnique({
+            where: { id: payload.sub ?? payload.id },
+            select: { id: true, role: true },
+        });
+        if (!user)
+            throw new common_1.UnauthorizedException('user_not_found');
+        const access = jsonwebtoken_1.default.sign({ sub: user.id, role: user.role }, process.env.JWT_ACCESS_SECRET, { expiresIn: '15m' });
+        res.cookie('access', access, {
+            httpOnly: true,
+            sameSite: 'lax',
+            secure: process.env.NODE_ENV === 'production',
+            maxAge: 15 * 60 * 1000,
+        });
+        return { ok: true, accessToken: access };
     }
     async logout(res) {
-        res.clearCookie("access");
-        res.clearCookie("refresh");
+        res.clearCookie('access');
+        res.clearCookie('refresh');
         return { ok: true };
     }
 };
 exports.AuthController = AuthController;
 __decorate([
-    (0, common_1.Post)("login"),
+    (0, common_1.Post)('login'),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, common_1.Res)({ passthrough: true })),
     __metadata("design:type", Function),
@@ -53,7 +96,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "login", null);
 __decorate([
-    (0, common_1.Post)("refresh"),
+    (0, common_1.Post)('refresh'),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, common_1.Res)({ passthrough: true })),
     __metadata("design:type", Function),
@@ -61,13 +104,14 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "refresh", null);
 __decorate([
-    (0, common_1.Post)("logout"),
+    (0, common_1.Post)('logout'),
     __param(0, (0, common_1.Res)({ passthrough: true })),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "logout", null);
 exports.AuthController = AuthController = __decorate([
-    (0, common_1.Controller)("api/auth"),
-    __metadata("design:paramtypes", [auth_service_1.AuthService])
+    (0, common_1.Controller)('api/auth'),
+    __metadata("design:paramtypes", [auth_service_1.AuthService,
+        prisma_service_1.PrismaService])
 ], AuthController);

@@ -16,7 +16,7 @@ let MessagesService = class MessagesService {
     constructor(prisma) {
         this.prisma = prisma;
     }
-    async sendToChat(senderId, chatId, content, attachmentIds) {
+    async sendToChat(senderId, chatId, content, attachmentIds = []) {
         const me = await this.prisma.user.findUnique({ where: { id: senderId } });
         const member = await this.prisma.chatMember.findFirst({
             where: { chatId, userId: senderId },
@@ -28,7 +28,17 @@ let MessagesService = class MessagesService {
             throw new common_1.ForbiddenException("empty_message");
         }
         const msg = await this.prisma.message.create({
-            data: { chatId, senderId, content: content || "" },
+            data: {
+                chatId,
+                senderId,
+                content: content || "",
+            },
+            include: {
+                sender: {
+                    select: { id: true, username: true, displayName: true },
+                },
+                attachments: true,
+            },
         });
         if (attachmentIds?.length) {
             await this.prisma.attachment.updateMany({
@@ -40,29 +50,40 @@ let MessagesService = class MessagesService {
                 data: { messageId: msg.id },
             });
         }
-        return this.prisma.message.findUnique({
-            where: { id: msg.id },
-            include: {
-                sender: {
-                    select: { id: true, username: true, displayName: true },
-                },
-                attachments: true,
-            },
-        });
+        return {
+            id: msg.id,
+            chatId: msg.chatId,
+            senderId: msg.senderId,
+            content: msg.content,
+            createdAt: msg.createdAt,
+            sender: msg.sender,
+            attachments: msg.attachments ?? [],
+            type: "message",
+        };
     }
-    async sendDm(senderId, recipientId, content, attachmentIds) {
-        const dmChat = await this.getOrCreateDmChatId(senderId, recipientId);
-        return this.sendToChat(senderId, dmChat, content, attachmentIds);
+    async sendDm(senderId, recipientId, content, attachmentIds = []) {
+        const dmChatId = await this.getOrCreateDmChatId(senderId, recipientId);
+        return this.sendToChat(senderId, dmChatId, content, attachmentIds);
     }
     async list(chatId, requesterId, opts) {
+        const member = await this.prisma.chatMember.findFirst({
+            where: { chatId, userId: requesterId },
+        });
+        const user = await this.prisma.user.findUnique({
+            where: { id: requesterId },
+            select: { role: true },
+        });
+        if (!member && user?.role !== "ADMIN") {
+            throw new common_1.ForbiddenException("not_a_member");
+        }
         return this.prisma.message.findMany({
             where: {
                 chatId,
                 ...(opts?.before && { createdAt: { lt: new Date(opts.before) } }),
                 ...(opts?.after && { createdAt: { gt: new Date(opts.after) } }),
             },
-            orderBy: { createdAt: "desc" },
-            take: opts?.limit || 20,
+            orderBy: { createdAt: "asc" },
+            take: Math.min(opts?.limit || 50, 200),
             include: {
                 sender: {
                     select: { id: true, username: true, displayName: true },
@@ -73,22 +94,17 @@ let MessagesService = class MessagesService {
     }
     async getOrCreateDmChatId(a, b) {
         const [userA, userB] = a < b ? [a, b] : [b, a];
+        const dmName = `dm:${userA}-${userB}`;
         const existing = await this.prisma.chat.findFirst({
-            where: {
-                isDirect: true,
-                members: {
-                    every: { userId: { in: [userA, userB] } },
-                },
-            },
+            where: { name: dmName, type: "DM" },
             select: { id: true },
         });
         if (existing)
             return existing.id;
         const chat = await this.prisma.chat.create({
             data: {
-                name: `DM ${userA}-${userB}`,
-                type: "direct",
-                isDirect: true,
+                name: dmName,
+                type: "DM",
                 members: {
                     create: [{ userId: userA }, { userId: userB }],
                 },
