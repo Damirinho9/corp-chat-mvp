@@ -1,9 +1,11 @@
-import { Body, Controller, Get, Post, Req, Param, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, Param, Query, UseGuards } from '@nestjs/common';
 import { ChatsService } from './chats.service';
 import { MessagesService } from '../messages/messages.service';
 import { PrismaService } from '../common/prisma.service';
+import { AuthGuard } from '../common/auth.guard';
 
 @Controller('api/chats')
+@UseGuards(AuthGuard)
 export class ChatsController {
   constructor(
     private readonly chats: ChatsService,
@@ -13,18 +15,30 @@ export class ChatsController {
 
   @Get()
   async list(@Req() req: any) {
-    // TODO: можно потом заменить на chats.listForUser(req.userId)
-    return [];
+    return this.chats.listForUser(req.userId);
   }
 
-  // ✅ новый эндпоинт для получения сообщений чата
   @Get(':id/messages')
   async getMessages(
+    @Req() req: any,
     @Param('id') id: string,
     @Query('limit') limit: string | number = 50,
   ) {
     const chatId = Number(id);
     const take = Math.min(Math.max(Number(limit) || 50, 1), 200);
+
+    // Проверка членства или роли ADMIN
+    const member = await this.prisma.chatMember.findFirst({
+      where: { chatId, userId: req.userId },
+    });
+    const user = await this.prisma.user.findUnique({ 
+      where: { id: req.userId },
+      select: { role: true }
+    });
+    
+    if (!member && user?.role !== 'ADMIN') {
+      return { error: 'Доступ запрещен' };
+    }
 
     const rows = await this.prisma.message.findMany({
       where: { chatId },
@@ -35,7 +49,6 @@ export class ChatsController {
       },
     });
 
-    // Отдаём в формате, который ожидает фронт
     return rows.map((m) => ({
       id: m.id,
       chatId: m.chatId,
@@ -46,7 +59,6 @@ export class ChatsController {
     }));
   }
 
-  // ✅ исправленный метод для DM
   @Post('dm')
   async getOrCreateDm(@Req() req: any, @Body() body: { recipientId: number }) {
     const userId = Number(req.userId);
@@ -56,26 +68,11 @@ export class ChatsController {
       return { error: 'Некорректный recipientId' };
     }
 
-    const [a, b] = [userId, recipientId].sort((x, y) => x - y);
-    const dmName = `dm:${a}-${b}`;
-
-    // 1) ищем уже созданный DM
-    let chat = await this.prisma.chat.findFirst({
-      where: { name: dmName, type: 'DM' },
-    });
-
-    // 2) если нет — создаём
-    if (!chat) {
-      chat = await this.prisma.chat.create({
-        data: { name: dmName, type: 'DM' },
-      });
-    }
-
-    return chat;
+    return this.chats.getOrCreateDm(userId, recipientId);
   }
 
   @Post('messages/chat')
-  sendToChat(
+  async sendToChat(
     @Req() req: any,
     @Body() body: { chatId: number; content?: string; attachmentIds?: number[] },
   ) {
@@ -88,7 +85,7 @@ export class ChatsController {
   }
 
   @Post('messages/dm')
-  sendDm(
+  async sendDm(
     @Req() req: any,
     @Body() body: { recipientId: number; content?: string; attachmentIds?: number[] },
   ) {
