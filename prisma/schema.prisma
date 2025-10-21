@@ -5,8 +5,8 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -60,8 +60,11 @@ model ChatMember {
   id     Int  @id @default(autoincrement())
   chatId Int
   userId Int
+
   chat   Chat @relation(fields: [chatId], references: [id])
   user   User @relation(fields: [userId], references: [id])
+
+  @@unique([chatId, userId], name: "chatId_userId")
 }
 
 model Message {
